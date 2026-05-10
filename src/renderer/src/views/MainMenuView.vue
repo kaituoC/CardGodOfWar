@@ -16,8 +16,8 @@
         class="save-slot"
         @click="loadManualSave(i)"
       >
-        <span v-if="manualSaves[i - 1]">
-          存档{{ i }}: Lv.{{ manualSaves[i - 1]!.level }}
+        <span v-if="gameStore.manualSaves[i - 1]">
+          存档{{ i }}: Lv.{{ gameStore.manualSaves[i - 1]!.level }}
         </span>
         <span v-else>存档{{ i }}: 空</span>
       </div>
@@ -31,11 +31,10 @@ import { useGameStore } from '../stores/game-store'
 
 const gameStore = useGameStore()
 const hasAutoSave = ref(false)
-const manualSaves = ref<(typeof gameStore.manualSaves)>([])
 
 onMounted(async () => {
   hasAutoSave.value = await gameStore.hasAutoSave()
-  manualSaves.value = await gameStore.loadManualSaves()
+  await gameStore.loadManualSaves()
 })
 
 async function loadAutoSave() {

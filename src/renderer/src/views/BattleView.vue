@@ -61,9 +61,13 @@ const showSaveDialog = ref(false)
 
 const battleState = computed(() => gameStore.currentBattle!)
 
-function onSave(slot: number) {
-  gameStore.saveManual(slot)
-  showSaveDialog.value = false
+async function onSave(slot: number) {
+  const success = await gameStore.saveManual(slot)
+  if (success) {
+    showSaveDialog.value = false
+  } else {
+    alert('保存失败，请重试')
+  }
 }
 </script>
 

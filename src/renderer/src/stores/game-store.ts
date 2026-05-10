@@ -59,18 +59,26 @@ export const useGameStore = defineStore('game', () => {
       battleState: currentBattle.value,
       timestamp: Date.now(),
     }
-    await window.electronAPI.saveGame('auto', data)
+    try {
+      await window.electronAPI.saveGame('auto', data)
+    } catch {
+      // Auto-save failure is non-fatal — silently skip
+    }
   }
 
-  async function saveManual(slot: number) {
-    if (!currentBattle.value) return
+  async function saveManual(slot: number): Promise<boolean> {
+    if (!currentBattle.value) return false
     const data: SaveData = {
       level: level.value,
       hero: { ...hero.value },
       battleState: currentBattle.value,
       timestamp: Date.now(),
     }
-    await window.electronAPI.saveGame(slot, data)
+    try {
+      return await window.electronAPI.saveGame(slot, data)
+    } catch {
+      return false
+    }
   }
 
   async function loadAutoSave() {
@@ -108,6 +116,7 @@ export const useGameStore = defineStore('game', () => {
         result[s.slot - 1] = data
       }
     }
+    manualSaves.value = result
     return result
   }
 
