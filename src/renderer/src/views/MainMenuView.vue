@@ -4,8 +4,8 @@
     <p class="subtitle">Card God Of War</p>
 
     <div class="buttons">
-      <button class="btn primary" @click="gameStore.startNewGame()">新游戏</button>
-      <button v-if="hasAutoSave" class="btn secondary" @click="loadAutoSave()">继续游戏</button>
+      <button class="btn primary" @click="confirmNewGame">新游戏</button>
+      <button v-if="hasAutoSave" class="btn secondary" @click="loadAutoSave">继续游戏</button>
     </div>
 
     <div class="save-slots">
@@ -14,12 +14,16 @@
         v-for="i in 3"
         :key="i"
         class="save-slot"
-        @click="loadManualSave(i)"
       >
         <span v-if="gameStore.manualSaves[i - 1]">
           存档{{ i }}: Lv.{{ gameStore.manualSaves[i - 1]!.level }}
+          HP {{ gameStore.manualSaves[i - 1]!.hero.currentHp }}/{{ gameStore.manualSaves[i - 1]!.hero.stats.maxHp }}
         </span>
         <span v-else>存档{{ i }}: 空</span>
+        <div class="slot-actions" v-if="gameStore.manualSaves[i - 1]">
+          <button class="btn secondary small" @click.stop="loadManualSave(i)">加载</button>
+          <button class="btn secondary small" @click.stop="overwriteSave(i)">覆盖保存</button>
+        </div>
       </div>
     </div>
   </div>
@@ -43,6 +47,21 @@ async function loadAutoSave() {
 
 async function loadManualSave(slot: number) {
   await gameStore.loadManualSave(slot)
+}
+
+function confirmNewGame() {
+  if (gameStore.currentBattle && !gameStore.currentBattle.gameOver) {
+    if (!confirm('开始新游戏将清除当前进度，是否继续？')) return
+  }
+  gameStore.startNewGame()
+}
+
+async function overwriteSave(slot: number) {
+  if (!gameStore.currentBattle) return
+  const saved = await gameStore.saveManual(slot)
+  if (saved) {
+    await gameStore.loadManualSaves()
+  }
 }
 </script>
 
@@ -93,10 +112,19 @@ async function loadManualSave(slot: number) {
   margin: 4px 0;
   background: #16213e;
   border-radius: 4px;
-  cursor: pointer;
 
   &:hover {
     background: #1a2a4a;
   }
+}
+
+.slot-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.small {
+  padding: 4px 8px;
+  font-size: 12px;
 }
 </style>
