@@ -1,0 +1,17 @@
+{
+  "appId": "com.cardgodofwar.app",
+  "productName": "卡牌战神",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*"
+  ],
+  "mac": {
+    "target": "dmg",
+    "category": "public.app-category.games"
+  },
+  "win": {
+    "target": "nsis"
+  }
+}

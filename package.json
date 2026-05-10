@@ -1,0 +1,31 @@
+{
+  "name": "card-god-of-war",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "electron:dev": "vite",
+    "electron:build": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "pinia": "^3.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0",
+    "sass": "^1.85.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.2.0",
+    "vite-plugin-electron": "^0.28.0",
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "vue-tsc": "^2.2.0",
+    "vitest": "^3.1.0"
+  }
+}
