@@ -81,7 +81,7 @@ describe('generateCards', () => {
         expect(card.coefficient).toBeGreaterThanOrEqual(min)
         expect(card.coefficient).toBeLessThanOrEqual(max)
       } else if (card.type === 'heal') {
-        const [min, max] = card.star === 1 ? [0.3, 0.4] : card.star === 2 ? [0.4, 0.6] : [0.6, 0.8]
+        const [min, max] = card.star === 1 ? [0.4, 0.5] : card.star === 2 ? [0.5, 0.7] : [0.7, 1.0]
         expect(card.coefficient).toBeGreaterThanOrEqual(min)
         expect(card.coefficient).toBeLessThanOrEqual(max)
       }

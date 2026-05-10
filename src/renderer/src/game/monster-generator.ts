@@ -3,7 +3,7 @@ import {
   MONSTER_BASE_STATS,
   MONSTER_PER_LEVEL_GROWTH,
   MONSTER_HP_EXPONENT,
-  BOSS_HP_MULTIPLIER,
+  BOSS_BASE_HP,
   BOSS_INTERVAL,
   BOSS_SKILL_COUNT,
   NORMAL_MONSTER_SKILL_COUNT,
@@ -22,8 +22,8 @@ function isBossLevel(level: number): boolean {
 
 export function generateMonster(level: number): Monster {
   const isBoss = isBossLevel(level)
-  const baseHp = MONSTER_BASE_STATS.baseHp * Math.pow(level, MONSTER_HP_EXPONENT)
-  const maxHp = isBoss ? baseHp * BOSS_HP_MULTIPLIER : baseHp
+  const baseHp = (isBoss ? BOSS_BASE_HP : MONSTER_BASE_STATS.baseHp) * Math.pow(level, MONSTER_HP_EXPONENT)
+  const maxHp = Math.floor(baseHp)
 
   const stats = {
     physicalAttack: MONSTER_BASE_STATS.physicalAttack + MONSTER_PER_LEVEL_GROWTH.physicalAttack * (level - 1),

@@ -11,11 +11,11 @@ export const HERO_INITIAL_STATS: Stats = {
 
 // 英雄胜利后成长
 export const HERO_VICTORY_GROWTH: Stats = {
-  physicalAttack: 1,
-  magicAttack: 1,
-  defense: 1,
-  maxHp: 3,
-  critRate: 1,
+  physicalAttack: 3,
+  magicAttack: 3,
+  defense: 2,
+  maxHp: 10,
+  critRate: 2,
 }
 
 // 怪兽第1关基础属性
@@ -23,23 +23,23 @@ export const MONSTER_BASE_STATS = {
   physicalAttack: 8,
   magicAttack: 8,
   defense: 3,
-  baseHp: 50,
+  baseHp: 40,
   critRate: 5,
 }
 
 // 怪兽每关成长（非血量）
 export const MONSTER_PER_LEVEL_GROWTH = {
-  physicalAttack: 5,
-  magicAttack: 5,
-  defense: 4,
+  physicalAttack: 3,
+  magicAttack: 3,
+  defense: 1,
   critRate: 1,
 }
 
 // 怪兽血量指数公式指数
-export const MONSTER_HP_EXPONENT = 1.3
+export const MONSTER_HP_EXPONENT = 1.05
 
-// Boss 基础血量乘数
-export const BOSS_HP_MULTIPLIER = 2 // Boss血量 = 普通怪兽 × 2
+// Boss 基础血量
+export const BOSS_BASE_HP = 50
 
 // Boss 狂暴起始回合
 export const ENRAGE_START_TURN = 15
@@ -87,7 +87,7 @@ export const CARD_STAR_WEIGHTS = [
 export const CARD_COEFFICIENTS = {
   physical: { 1: [1.0, 1.5], 2: [1.5, 2.2], 3: [2.2, 3.0] },
   magic:    { 1: [1.0, 1.5], 2: [1.5, 2.2], 3: [2.2, 3.0] },
-  heal:     { 1: [0.3, 0.4], 2: [0.4, 0.6], 3: [0.6, 0.8] },
+  heal:     { 1: [0.4, 0.5], 2: [0.5, 0.7], 3: [0.7, 1.0] },
 } as const
 
 // 属性提升值
