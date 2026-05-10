@@ -69,3 +69,26 @@ html, body, #app {
     &:hover { background: linear-gradient(135deg, #e6a817, #d49814); }
   }
 }
+
+// 攻击动画
+@keyframes damage-flash {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; transform: translateX(-2px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes heal-pulse {
+  0% { box-shadow: 0 0 0 rgba(39, 174, 96, 0); }
+  50% { box-shadow: 0 0 20px rgba(39, 174, 96, 0.6); }
+  100% { box-shadow: 0 0 0 rgba(39, 174, 96, 0); }
+}
+
+@keyframes crit-burst {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); color: #f0c040; }
+  100% { transform: scale(1); }
+}
+
+.damage-flash { animation: damage-flash 0.3s ease; }
+.heal-pulse { animation: heal-pulse 0.5s ease; }
+.crit-burst { animation: crit-burst 0.4s ease; }
