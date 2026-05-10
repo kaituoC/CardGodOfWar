@@ -1,6 +1,6 @@
 <template>
   <div class="app-container">
-    <MainMenuView v-if="gameStore.view === 'menu'" @start-game="gameStore.startNewGame()" />
+    <MainMenuView v-if="gameStore.view === 'menu'" />
     <BattleView v-else-if="gameStore.currentBattle" />
     <div v-else class="loading">加载中...</div>
   </div>

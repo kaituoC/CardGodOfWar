@@ -39,9 +39,10 @@ export const useGameStore = defineStore('game', () => {
   }
 
   function retryLevel() {
-    level.value = 1
-    hero.value = resetToInitialHero()
-    startBattle()
+    // Restart the current level battle with current hero stats
+    // Hero keeps current HP and attributes; monster is regenerated
+    currentBattle.value = createBattle(level.value, hero.value)
+    autoSave()
   }
 
   function backToStart() {
