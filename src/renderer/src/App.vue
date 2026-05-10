@@ -1,20 +1,17 @@
 <template>
   <div class="app-container">
-    <MainMenuView v-if="\!gameStarted" @start-game="startGame" />
-    <BattleView v-else />
+    <MainMenuView v-if="gameStore.view === 'menu'" @start-game="gameStore.startNewGame()" />
+    <BattleView v-else-if="gameStore.currentBattle" />
+    <div v-else class="loading">加载中...</div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { useGameStore } from './stores/game-store'
 import MainMenuView from './views/MainMenuView.vue'
 import BattleView from './views/BattleView.vue'
 
-const gameStarted = ref(false)
-
-function startGame() {
-  gameStarted.value = true
-}
+const gameStore = useGameStore()
 </script>
 
 <style lang="scss">

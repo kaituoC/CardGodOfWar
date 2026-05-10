@@ -1,5 +1,19 @@
-import { app, BrowserWindow } from 'electron'
-import { join } from 'path'
+import { app, BrowserWindow, ipcMain } from 'electron'
+import { join, homedir } from 'path'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs'
+
+const SAVE_DIR = join(homedir(), '.cardgodofwar', 'saves')
+
+function ensureSaveDir() {
+  if (!existsSync(SAVE_DIR)) {
+    mkdirSync(SAVE_DIR, { recursive: true })
+  }
+}
+
+function getSavePath(slot: number | 'auto'): string {
+  const name = slot === 'auto' ? 'autosave.json' : `save_${slot}.json`
+  return join(SAVE_DIR, name)
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -14,5 +28,46 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
-app.on('window-all-closed', () => { if (process.platform \!== 'darwin') app.quit() })
+app.whenReady().then(() => {
+  ensureSaveDir()
+
+  ipcMain.handle('save-game', (_event, slot: number | 'auto', data: unknown) => {
+    try {
+      ensureSaveDir()
+      writeFileSync(getSavePath(slot), JSON.stringify(data, null, 2), 'utf-8')
+      return true
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle('load-game', (_event, slot: number | 'auto') => {
+    const path = getSavePath(slot)
+    if (!existsSync(path)) return null
+    try {
+      return JSON.parse(readFileSync(path, 'utf-8'))
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('has-auto-save', () => {
+    return existsSync(getSavePath('auto'))
+  })
+
+  ipcMain.handle('list-saves', () => {
+    ensureSaveDir()
+    const files = readdirSync(SAVE_DIR)
+    return files
+      .filter(f => f.startsWith('save_') && f.endsWith('.json'))
+      .map(f => {
+        const match = f.match(/^save_(\d+)\.json$/)
+        return match ? { slot: parseInt(match[1], 10), filename: f } : null
+      })
+      .filter(Boolean)
+  })
+
+  createWindow()
+})
+
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
