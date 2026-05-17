@@ -56,8 +56,24 @@ npm run test:watch   # Run tests in watch mode
 
 ```bash
 npm run build          # Type check + production build
-npm run electron:build # Build + package (electron-builder)
+npm run pack           # Build unpacked app (for testing)
+npm run dist           # Build installers for current platform
+npm run dist:mac       # Build macOS DMG + ZIP
+npm run dist:win       # Build Windows NSIS installer + ZIP
+npm run dist:linux     # Build Linux AppImage + DEB
 ```
+
+Output files are placed in `release/`.
+
+**Supported platforms:**
+
+| Platform | Output Format |
+|----------|---------------|
+| macOS | ZIP portable |
+| Windows | NSIS installer + portable ZIP |
+| Linux | AppImage + DEB package |
+
+> macOS DMG requires macOS 13+ build machine. Current environment uses ZIP.
 
 ## Architecture
 

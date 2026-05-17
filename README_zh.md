@@ -56,8 +56,24 @@ npm run test:watch   # 监听模式运行测试
 
 ```bash
 npm run build          # 类型检查 + 生产构建
-npm run electron:build # 构建 + 打包（electron-builder）
+npm run pack           # 构建未打包的 app（用于测试）
+npm run dist           # 构建当前平台的安装包
+npm run dist:mac       # 构建 macOS DMG + ZIP
+npm run dist:win       # 构建 Windows NSIS 安装包 + ZIP
+npm run dist:linux     # 构建 Linux AppImage + DEB
 ```
+
+输出文件位于 `release/` 目录。
+
+**支持的平台：**
+
+| 平台 | 输出格式 |
+|------|----------|
+| macOS | ZIP 便携版 |
+| Windows | NSIS 安装包 + 便携 ZIP |
+| Linux | AppImage + DEB 包 |
+
+> macOS 上 dmg 构建需要 macOS 13+，当前构建环境为 macOS 12，故使用 zip 格式。
 
 ## 架构
 

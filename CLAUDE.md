@@ -69,10 +69,22 @@ tests/
 npm run dev            # 开发服务器（Vite + Electron 热重载）
 npm run build          # 类型检查 + 生产构建
 npm run preview        # 预览生产构建
+npm run pack           # 构建未打包的 app（用于测试）
+npm run dist           # 构建当前平台的安装包
+npm run dist:mac       # 构建 macOS ZIP
+npm run dist:win       # 构建 Windows NSIS + ZIP
+npm run dist:linux     # 构建 Linux AppImage + DEB
 npm run test           # 运行一次 Vitest 测试
 npm run test:watch     # Vitest 监听模式
-npm run electron:build # 构建 + 打包（electron-builder）
 ```
+
+打包输出到 `release/` 目录。
+
+### 打包配置（`electron-builder.json`）
+
+| macOS | ZIP | dmg 构建需要 macOS 13+，当前环境用 zip |
+| Windows | NSIS + ZIP | NSIS 支持自定义安装路径、快捷方式 |
+| Linux | AppImage + DEB | AppImage 免安装运行，DEB 系统安装 |
 
 ## 架构
 
