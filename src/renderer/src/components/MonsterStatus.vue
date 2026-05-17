@@ -37,7 +37,7 @@
     <!-- Intent panel -->
     <div v-if="showIntent" class="intent-panel">
       <div class="intent-row">
-        <span class="intent-label">下回合:</span>
+        <span class="intent-label">怪兽行动:</span>
         <span class="intent-value">{{ intentAttackLabel }}</span>
         <span class="intent-damage">预计 {{ intent.estimatedDamage }}</span>
         <span v-if="intent.critRate > 0" class="intent-crit">

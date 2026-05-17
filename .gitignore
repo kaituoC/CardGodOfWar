@@ -49,3 +49,7 @@ Thumbs.db
 
 # Local runtime data
 .cardgodofwar/
+
+# AI assistant local settings
+.claude/
+.agents/

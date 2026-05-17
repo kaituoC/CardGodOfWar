@@ -14,16 +14,14 @@
     </div>
 
     <div class="battle-content">
-      <div class="left-panel">
-        <div class="cards-wrapper">
-          <CardHand
-            :cards="battleState.cards"
-            :is-stunned="battleState.hero.isStunned"
-            :battle-state="battleState"
-            @play-card="gameStore.playCardAction"
-            @skip-turn="gameStore.skipTurnAction"
-          />
-        </div>
+      <div class="decision-area">
+        <CardHand
+          :cards="battleState.cards"
+          :is-stunned="battleState.hero.isStunned"
+          :battle-state="battleState"
+          @play-card="gameStore.playCardAction"
+          @skip-turn="gameStore.skipTurnAction"
+        />
         <div class="battle-actions-bar">
           <button class="btn secondary" @click="showSaveDialog = true">保存</button>
           <button class="btn secondary" @click="confirmBackToMenu">回主菜单</button>
@@ -171,36 +169,41 @@ function confirmBackToMenu() {
 .battle-content {
   display: flex;
   flex: 1;
-  gap: 8px;
+  gap: 12px;
   min-height: 0;
 }
 
-.left-panel {
-  flex: 0 0 55%;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  align-self: stretch;
-}
-
-.cards-wrapper {
+.decision-area {
   flex: 1;
   display: flex;
-  align-items: center;
-  padding-bottom: 48px;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .battle-actions-bar {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 12px;
   padding: 10px 12px;
-  background: rgba(22, 33, 62, 0.7);
-  border-radius: 8px 8px 0 0;
+  background: rgba(22, 33, 62, 0.6);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.btn.secondary {
+  padding: 8px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #ecf0f1;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
 }
 
 .damage-flash {
@@ -225,5 +228,12 @@ function confirmBackToMenu() {
 @keyframes fade-out {
   0% { opacity: 1; }
   100% { opacity: 0; }
+}
+
+// Responsive: stack log below decision area on narrow screens
+@media (max-width: 900px) {
+  .battle-content {
+    flex-direction: column;
+  }
 }
 </style>

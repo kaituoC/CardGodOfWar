@@ -254,6 +254,11 @@ export type CardOutcomeEstimate =
     }
   | { type: 'heal'; amount: number; text: string }
   | { type: 'statBoost'; stat: keyof Stats; amount: number; text: string }
+  | {
+      type: 'unavailable'
+      reason: 'missingIntent' | 'gameOver'
+      text: ''
+    }
 
 // 战斗状态
 export interface BattleState {

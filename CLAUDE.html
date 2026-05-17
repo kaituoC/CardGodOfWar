@@ -1,0 +1,125 @@
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Export</title></head><body><h1>CLAUDE.md</h1>
+<p>This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.</p>
+<h2>项目概览</h2>
+<p><strong>Card God Of War</strong>（卡牌战神）是一款 Electron 桌面卡牌对战游戏，使用 Vue 3 + TypeScript + Pinia 构建。玩家通过出牌（攻击/治疗/属性提升）在回合制战斗中击败不断升级的怪兽，角色属性随胜利持续增长。</p>
+<h2>技术栈</h2>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>技术</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>运行时</td>
+<td>Electron 38</td>
+</tr>
+<tr>
+<td>前端</td>
+<td>Vue 3.5 + TypeScript</td>
+</tr>
+<tr>
+<td>状态管理</td>
+<td>Pinia 3</td>
+</tr>
+<tr>
+<td>样式</td>
+<td>SCSS</td>
+</tr>
+<tr>
+<td>构建</td>
+<td>Vite 6 + vite-plugin-electron</td>
+</tr>
+<tr>
+<td>打包</td>
+<td>electron-builder 26</td>
+</tr>
+<tr>
+<td>测试</td>
+<td>Vitest 3</td>
+</tr>
+<tr>
+<td>类型检查</td>
+<td>vue-tsc 2</td>
+</tr>
+</tbody></table>
+<h2>目录结构</h2>
+<pre><code>src/
+  main.ts                    # Electron 主进程（存档/读档 IPC 处理器）
+  preload.ts                 # Electron 预加载脚本（向渲染进程暴露 electronAPI）
+  renderer/
+    index.html               # 入口 HTML
+    src/
+      main.ts                # Vue 应用入口（创建 Pinia）
+      App.vue                # 根组件，在菜单/战斗视图间切换
+      views/
+        MainMenuView.vue     # 主菜单：新游戏、继续游戏、手动存档加载
+        BattleView.vue       # 战斗界面：状态栏、手牌、战斗日志
+      components/
+        HeroStatus.vue       # 英雄血量/属性显示
+        MonsterStatus.vue    # 怪兽血量/元素/技能显示
+        CardHand.vue         # 可出牌手牌 UI
+        CardComponent.vue    # 单张卡牌渲染
+        StatusBar.vue        # 顶部栏：关卡、回合数、Boss/狂暴指示器
+        BattleLog.vue        # 可滚动的战斗日志
+        ResultDialog.vue     # 胜负弹窗，重试/下一关/返回选项
+        SaveDialog.vue       # 手动存档槽位选择
+      stores/
+        game-store.ts        # Pinia store：游戏状态、操作、通过 IPC 存档/读档
+      game/
+        types.ts             # 全部 TypeScript 接口定义
+        constants.ts         # 游戏平衡数值（属性、倍率、间隔等）
+        game-engine.ts       # 核心战斗逻辑：创建战斗、出牌、怪兽反击
+        battle-calculator.ts # 伤害计算公式（防御、元素、暴击、护盾、狂暴）
+        card-pool.ts         # 卡牌生成，按类型/星级/系数加权随机
+        monster-generator.ts # 怪兽属性随关卡缩放及技能分配
+      styles/
+        global.scss          # 全局 CSS 重置和主题变量
+tests/
+  scaffold.test.ts           # 占位测试
+</code></pre>
+<h2>常用命令</h2>
+<pre><code class="language-bash">npm run dev            # 开发服务器（Vite + Electron 热重载）
+npm run build          # 类型检查 + 生产构建
+npm run preview        # 预览生产构建
+npm run test           # 运行一次 Vitest 测试
+npm run test:watch     # Vitest 监听模式
+npm run electron:build # 构建 + 打包（electron-builder）
+</code></pre>
+<h2>架构</h2>
+<h3>数据流</h3>
+<pre><code>MainMenuView  →  gameStore.startNewGame()  →  createBattle()  →  BattleState
+BattleView    →  gameStore.playCardAction() →  playCard()      →  calculateDamage()
+                  ↓
+              battleState 更新（Pinia 响应式）
+                  ↓
+              Vue 组件重新渲染
+</code></pre>
+<h3>游戏引擎（<code>game-engine.ts</code>）</h3>
+<ul>
+<li><strong><code>createInitialHero()</code></strong> — 使用 <code>HERO_INITIAL_STATS</code> 创建初始英雄</li>
+<li><strong><code>createBattle(level, hero)</code></strong> — 生成怪兽 + 卡牌，返回 <code>BattleState</code></li>
+<li><strong><code>playCard(state, card)</code></strong> — 处理攻击/治疗/属性提升，然后触发 <code>monsterCounterAttack()</code></li>
+<li><strong><code>monsterCounterAttack()</code></strong> — 怪兽反击，判定眩晕等技能，推进回合</li>
+<li><strong><code>applyVictoryGrowth(hero)</code></strong> — 胜利后永久提升英雄属性</li>
+<li>Boss 在第 15 回合后进入狂暴，每回合伤害递增</li>
+</ul>
+<h3>伤害计算（<code>battle-calculator.ts</code>）</h3>
+<p>伤害管线：<code>攻击 × 系数 → 减去防御 → 元素倍率 (0/0.5/1.0/1.5) → 暴击判定 (1.5× 或 2.0×) → 护盾 (0.5×) → 狂暴（仅怪兽） → 向下取整到 MIN_DAMAGE=1</code></p>
+<h3>状态管理（<code>game-store.ts</code>）</h3>
+<p>单一 Pinia store 管理全部游戏状态：</p>
+<ul>
+<li><code>level</code>、<code>hero</code>、<code>currentBattle</code>、<code>view</code>（menu/battle）</li>
+<li>通过 Electron IPC 存档/读档，路径 <code>~/.cardgodofwar/saves/</code></li>
+<li>战斗开始和每次出牌后自动存档</li>
+<li>3 个手动存档槽 + 1 个自动存档槽</li>
+</ul>
+<h3>存档系统</h3>
+<ul>
+<li>主进程（<code>main.ts</code>）处理 IPC：<code>save-game</code>、<code>load-game</code>、<code>has-auto-save</code>、<code>list-saves</code></li>
+<li>存档以 JSON 格式存储在 <code>~/.cardgodofwar/saves/</code></li>
+<li>存档格式：<code>{ level, hero, battleState, timestamp }</code></li>
+</ul>
+<h3>路径别名</h3>
+<p><code>@</code> 解析为 <code>src/renderer/src/</code>（在 <code>vite.config.ts</code> 和 <code>vitest.config.ts</code> 中配置）</p>
+</body></html>

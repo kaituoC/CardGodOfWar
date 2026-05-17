@@ -107,6 +107,7 @@ export function generateMonsterIntent(input: GenerateMonsterIntentInput): Monste
   const isCritBoost = skills.some(s => s.type === 'critBoost' && s.willTrigger)
   const elementImmune = skills.find(s => s.type === 'elementImmune' && s.willTrigger)
 
+  // Preview base damage (without enrage for the previewDamage helper)
   const preview = previewDamage(
     baseAttack,
     1.0,
@@ -118,12 +119,16 @@ export function generateMonsterIntent(input: GenerateMonsterIntentInput): Monste
     elementImmune?.immuneElement ?? null,
   )
 
+  // Apply enrage multiplier to the final estimated damage
+  const enragedEstimated = Math.max(Math.floor(preview.estimatedDamage * enrageMultiplier), 1)
+  const enragedCrit = Math.max(Math.floor(preview.critDamage * enrageMultiplier), 1)
+
   const attackTypeLabel = attackType === 'physical' ? '物理' : '魔法'
   const skillParts = skills.filter(s => s.willTrigger).map(s => s.label)
   const skillText = skillParts.length > 0 ? ` [${skillParts.join(', ')}]` : ''
   const enrageText = enrageMultiplier > 1 ? ` (狂暴×${enrageMultiplier.toFixed(1)})` : ''
 
-  const message = `怪兽将使用${attackTypeLabel}攻击，预计伤害 ${preview.estimatedDamage}${enrageText}${skillText}`
+  const message = `怪兽将使用${attackTypeLabel}攻击，预计伤害 ${enragedEstimated}${enrageText}${skillText}`
 
   const id = `intent-turn-${currentTurn}-${nextSequence()}`
 
@@ -134,8 +139,8 @@ export function generateMonsterIntent(input: GenerateMonsterIntentInput): Monste
     action: 'attack',
     attackType,
     baseAttack,
-    estimatedDamage: preview.estimatedDamage,
-    critDamage: preview.critDamage,
+    estimatedDamage: enragedEstimated,
+    critDamage: enragedCrit,
     critRate: monster.stats.critRate,
     element: monster.element,
     enrageMultiplier,
@@ -151,6 +156,27 @@ function findTriggeredSkill(intent: MonsterIntent, type: MonsterIntentSkill['typ
 export function estimateCardOutcome(battle: BattleState, card: Card): CardOutcomeEstimate {
   const { hero, monster, monsterIntent } = battle
 
+  // Game-over state: no actionable estimates
+  if (battle.gameOver) {
+    if (card.type === 'physical' || card.type === 'magic') {
+      return {
+        type: 'unavailable',
+        reason: 'gameOver',
+        text: '',
+      }
+    }
+    // Non-attack cards still show their base info even in game-over
+  }
+
+  // Safe fallback for missing intent (attack cards only)
+  if (!monsterIntent && (card.type === 'physical' || card.type === 'magic')) {
+    return {
+      type: 'unavailable',
+      reason: 'missingIntent',
+      text: '',
+    }
+  }
+
   if ((card.type === 'physical' || card.type === 'magic') && hero.isStunned) {
     return {
       type: 'blocked',
@@ -164,8 +190,8 @@ export function estimateCardOutcome(battle: BattleState, card: Card): CardOutcom
     const attack = card.type === 'physical' ? hero.stats.physicalAttack : hero.stats.magicAttack
     const shield = findTriggeredSkill(monsterIntent, 'shield')
     const elementImmune = findTriggeredSkill(monsterIntent, 'elementImmune')
-    const critBoost = findTriggeredSkill(monsterIntent, 'critBoost')
-    const isCritBoost = Boolean(critBoost)
+    // Monster critBoost does NOT affect hero card estimates — hero attacks use their own crit only
+    const isCritBoost = false
 
     const preview = previewDamage(
       attack,
@@ -205,7 +231,8 @@ export function estimateCardOutcome(battle: BattleState, card: Card): CardOutcom
   }
 
   if (card.type === 'heal') {
-    const healAmount = Math.floor(hero.stats.maxHp * card.coefficient)
+    const rawHeal = Math.floor(hero.stats.maxHp * card.coefficient)
+    const healAmount = Math.min(rawHeal, hero.stats.maxHp - hero.currentHp)
     return {
       type: 'heal',
       amount: healAmount,
@@ -231,9 +258,10 @@ export function estimateCardOutcome(battle: BattleState, card: Card): CardOutcom
     }
   }
 
+  // Generic fallback for unknown card types
   return {
-    type: 'heal',
-    amount: 0,
+    type: 'unavailable',
+    reason: 'missingIntent',
     text: '',
   }
 }

@@ -1,0 +1,20 @@
+# stun-game-lock-fix Specification
+
+## Purpose
+TBD - created by archiving change improve-battle-ui-and-fix-bugs. Update Purpose after archive.
+## Requirements
+### Requirement: 眩晕状态下防止游戏死锁
+眩晕状态下英雄不能使用攻击卡牌，但如果当前手牌全部为攻击卡牌，系统 MUST 提供跳过回合的机制以避免游戏死锁。
+
+#### Scenario: 眩晕且手牌全为攻击卡时提供跳过按钮
+- **WHEN** 英雄处于眩晕状态且当前手牌全部为物理/魔法攻击类型
+- **THEN** 手牌区域显示"跳过回合"按钮，点击后推进到下一回合并重新生成手牌
+
+#### Scenario: 眩晕但手牌有非攻击卡时
+- **WHEN** 英雄处于眩晕状态但手牌中包含治疗或属性提升卡
+- **THEN** 不显示跳过按钮，玩家仍可点击非攻击卡正常出牌
+
+#### Scenario: 眩晕时攻击卡牌显示禁用状态
+- **WHEN** 英雄处于眩晕状态
+- **THEN** 所有攻击类卡牌显示为禁用/灰色状态，不可点击
+

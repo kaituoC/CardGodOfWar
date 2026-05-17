@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { generateMonsterIntent, previewDamage, estimateCardOutcome } from '@/game/monster-intent'
 import { createInitialHero, createBattle, playCard, skipTurn } from '@/game/game-engine'
-import type { BattleState, Card } from '@/game/types'
+import type { BattleState, Card, MonsterSkill } from '@/game/types'
 
 function card(overrides: Partial<Card>): Card {
   return {
@@ -35,6 +35,31 @@ function noCritBattle(): BattleState {
       skills: [],
     },
   }
+}
+
+function battleWithMonsterSkills(skills: MonsterSkill[], overrides?: Partial<BattleState>): BattleState {
+  const base = noCritBattle()
+  const { monster: overrideMonster, ...restOverrides } = overrides ?? {}
+  const monster = {
+    ...base.monster,
+    ...overrideMonster,
+    skills,
+  }
+  const battle: BattleState = {
+    ...base,
+    monster,
+    ...restOverrides,
+  }
+  const intent = generateMonsterIntent({
+    level: battle.level,
+    hero: battle.hero,
+    monster: battle.monster,
+    currentTurn: battle.currentTurn,
+    maxTurns: battle.maxTurns,
+    isEnraged: battle.isEnraged,
+    source: 'generated',
+  })
+  return { ...battle, monsterIntent: intent }
 }
 
 // ============================================================
@@ -159,6 +184,8 @@ describe('estimateCardOutcome', () => {
 
   it('heal estimate is correct', () => {
     const battle = noCritBattle()
+    // Damage hero so there's missing HP to heal
+    battle.hero.currentHp = Math.floor(battle.hero.stats.maxHp * 0.6)
     const healCard = card({ type: 'heal', coefficient: 0.4, element: undefined })
     const estimate = estimateCardOutcome(battle, healCard)
 
@@ -197,6 +224,94 @@ describe('estimateCardOutcome', () => {
     expect(estimate.type).toBe('blocked')
     if (estimate.type === 'blocked') {
       expect(estimate.text).toBe('眩晕中')
+    }
+  })
+
+  it('monster critBoost does not affect hero card crit preview', () => {
+    const battle = battleWithMonsterSkills([{ type: 'critBoost', triggerChance: 100 }])
+    const attackCard = card({ type: 'physical', coefficient: 1.5, element: battle.monster.element })
+    const estimate = estimateCardOutcome(battle, attackCard)
+
+    expect(estimate.type).toBe('damage')
+    if (estimate.type === 'damage') {
+      // Hero card estimate should use normal crit, not monster's boosted crit
+      expect(estimate.critLabel).toBe('暴击')
+      // Verify the critDamage is based on normal multiplier, not boosted
+      const noCritBoostBattle = battleWithMonsterSkills([])
+      const noBoostEstimate = estimateCardOutcome(noCritBoostBattle, card({ type: 'physical', coefficient: 1.5, element: noCritBoostBattle.monster.element }))
+      // They should be equal since monster critBoost doesn't affect hero cards
+      expect(estimate.critDamage).toBe((noBoostEstimate as any).critDamage)
+    }
+  })
+
+  it('heal estimate is clamped by missing HP', () => {
+    const battle = noCritBattle()
+    // Hero is nearly full, heal would overflow
+    battle.hero.currentHp = battle.hero.stats.maxHp - 5
+    const healCard = card({ type: 'heal', coefficient: 0.5, element: undefined })
+    const estimate = estimateCardOutcome(battle, healCard)
+
+    expect(estimate.type).toBe('heal')
+    if (estimate.type === 'heal') {
+      // Should only heal 5, not the full 50% of maxHp
+      expect(estimate.amount).toBe(5)
+      expect(estimate.text).toContain('恢复')
+    }
+  })
+
+  it('heal estimate is zero when hero is at full HP', () => {
+    const battle = noCritBattle()
+    const healCard = card({ type: 'heal', coefficient: 0.4, element: undefined })
+    const estimate = estimateCardOutcome(battle, healCard)
+
+    expect(estimate.type).toBe('heal')
+    if (estimate.type === 'heal') {
+      expect(estimate.amount).toBe(0)
+    }
+  })
+
+  it('missing monsterIntent returns unavailable for attack cards', () => {
+    const battle = noCritBattle()
+    // Simulate missing intent
+    ;(battle as any).monsterIntent = null
+    const attackCard = card({ type: 'physical', element: 'fire' })
+    const estimate = estimateCardOutcome(battle, attackCard)
+
+    expect(estimate.type).toBe('unavailable')
+    if (estimate.type === 'unavailable') {
+      expect(estimate.reason).toBe('missingIntent')
+      expect(estimate.text).toBe('')
+    }
+  })
+
+  it('gameOver returns unavailable for attack cards', () => {
+    const battle: BattleState = {
+      ...noCritBattle(),
+      gameOver: true,
+      winner: 'monster' as const,
+    }
+    const attackCard = card({ type: 'physical', element: 'fire' })
+    const estimate = estimateCardOutcome(battle, attackCard)
+
+    expect(estimate.type).toBe('unavailable')
+    if (estimate.type === 'unavailable') {
+      expect(estimate.reason).toBe('gameOver')
+    }
+  })
+
+  it('heal and statBoost estimates work without monsterIntent', () => {
+    const battle = noCritBattle()
+    ;(battle as any).monsterIntent = null
+
+    const healCard = card({ type: 'heal', coefficient: 0.3, element: undefined })
+    const healEstimate = estimateCardOutcome(battle, healCard)
+    expect(healEstimate.type).toBe('heal')
+
+    const boostCard = card({ type: 'statBoost', coefficient: 0, element: undefined, statBoost: { stat: 'defense', value: 3 } })
+    const boostEstimate = estimateCardOutcome(battle, boostCard)
+    expect(boostEstimate.type).toBe('statBoost')
+    if (boostEstimate.type === 'statBoost') {
+      expect(boostEstimate.amount).toBe(3)
     }
   })
 })
@@ -262,6 +377,36 @@ describe('generateMonsterIntent', () => {
       currentTurn: 18, maxTurns: 20, isEnraged: true,
     })
     expect(enragedIntent.enrageMultiplier).toBeGreaterThan(1.0)
+  })
+
+  it('enraged Boss intent estimatedDamage matches actual non-crit monster damage', () => {
+    const hero = createInitialHero()
+    const battle = createBattle(5, hero)
+    battle.monster.isBoss = true
+    // Remove all skills and crit to ensure deterministic damage
+    battle.monster.skills = []
+    battle.monster.stats.critRate = 0
+    battle.hero.stats.critRate = 0
+
+    const enragedIntent = generateMonsterIntent({
+      level: 5,
+      hero: battle.hero,
+      monster: battle.monster,
+      currentTurn: 18,
+      maxTurns: 20,
+      isEnraged: true,
+    })
+
+    // The intent's estimatedDamage should match what the monster actually deals
+    // (non-crit, with enrage multiplier)
+    expect(enragedIntent.estimatedDamage).toBeGreaterThan(0)
+    // Verify enrage is applied to the estimate
+    expect(enragedIntent.enrageMultiplier).toBeGreaterThan(1.0)
+    // estimatedDamage should include the enrage multiplier
+    const baseAttack = battle.monster.stats.physicalAttack // or magicAttack depending on intent
+    const expectedBase = baseAttack * 1.0 - battle.hero.stats.defense
+    const expectedWithEnrage = Math.max(Math.floor(expectedBase * enragedIntent.enrageMultiplier), 1)
+    expect(enragedIntent.estimatedDamage).toBe(expectedWithEnrage)
   })
 
   it('restored intent has correct source', () => {
