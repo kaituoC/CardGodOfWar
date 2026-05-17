@@ -32,16 +32,39 @@
       </div>
     </div>
     <div class="skill-tags">
-      <span v-for="(label, i) in skillLabels" :key="i" class="skill-tag">{{ label }}</span>
+      <span v-for="(label, i) in monsterSkills" :key="i" class="skill-tag">{{ label }}</span>
+    </div>
+    <!-- Intent panel -->
+    <div v-if="showIntent" class="intent-panel">
+      <div class="intent-row">
+        <span class="intent-label">下回合:</span>
+        <span class="intent-value">{{ intentAttackLabel }}</span>
+        <span class="intent-damage">预计 {{ intent.estimatedDamage }}</span>
+        <span v-if="intent.critRate > 0" class="intent-crit">
+          | {{ critLabel }}{{ intent.critRate }}%→{{ intent.critDamage }}
+        </span>
+      </div>
+      <div v-if="triggeredSkillLabels.length > 0" class="intent-skills">
+        <span v-for="(label, i) in triggeredSkillLabels" :key="i" class="intent-skill-tag">{{ label }}</span>
+      </div>
+    </div>
+    <!-- Boss pressure -->
+    <div v-if="monster.isBoss" class="boss-pressure">
+      <span v-if="!battleState.isEnraged" class="pressure-warn">
+        狂暴倒计时: {{ enrageTurnsLeft }} 回合
+      </span>
+      <span v-else class="pressure-active">
+        狂暴 ×{{ intentEnrageMultiplier.toFixed(1) }}
+      </span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Monster } from '../game/types'
+import type { BattleState } from '../game/types'
 
-const props = defineProps<{ monster: Monster }>()
+const props = defineProps<{ monster: BattleState['monster']; battleState: BattleState }>()
 const hpPercent = computed(() => Math.round(props.monster.currentHp / props.monster.stats.maxHp * 100))
 
 const elementLabels: Record<string, string> = { fire: '火', thunder: '雷', water: '水' }
@@ -55,11 +78,44 @@ const elementLabel = computed(() => elementLabels[props.monster.element])
 const advantageElement = computed(() => advantageMap[props.monster.element])
 const advantageLabel = computed(() => elementLabels[advantageElement.value])
 
-const skillLabels = computed(() =>
+const monsterSkills = computed(() =>
   props.monster.skills.map(s =>
     skillLabelsMap[s.type] + (s.immuneElement ? `(${elementLabels[s.immuneElement]})` : '')
   )
 )
+
+// Intent display
+const showIntent = computed(() =>
+  props.battleState.phase === 'playerAction' && !props.battleState.gameOver && props.battleState.monsterIntent
+)
+
+const intent = computed(() => props.battleState.monsterIntent)
+
+const attackTypeLabels: Record<string, string> = { physical: '物理攻击', magic: '魔法攻击' }
+const intentAttackLabel = computed(() => attackTypeLabels[intent.value?.attackType ?? ''] ?? '')
+
+const critLabel = computed(() => {
+  const critBoost = intent.value?.skills.find(s => s.type === 'critBoost' && s.willTrigger)
+  return critBoost ? '强化暴击' : '暴击'
+})
+
+const triggeredSkillLabels = computed(() => {
+  if (!intent.value) return []
+  return intent.value.skills
+    .filter(s => s.willTrigger)
+    .map(s => s.label)
+})
+
+const ENRAGE_START_TURN = 15
+const enrageTurnsLeft = computed(() => {
+  if (!props.monster.isBoss || props.battleState.isEnraged) return 0
+  return ENRAGE_START_TURN - props.battleState.currentTurn
+})
+
+const intentEnrageMultiplier = computed(() => {
+  if (!intent.value) return 1.0
+  return intent.value.enrageMultiplier
+})
 </script>
 
 <style lang="scss" scoped>
@@ -169,5 +225,73 @@ const skillLabels = computed(() =>
   background: rgba(240, 192, 64, 0.15);
   color: #f0c040;
   border: 1px solid rgba(240, 192, 64, 0.3);
+}
+
+// Intent panel
+.intent-panel {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: rgba(233, 69, 96, 0.08);
+  border-radius: 6px;
+  border: 1px solid rgba(233, 69, 96, 0.2);
+}
+
+.intent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.intent-label {
+  color: #95a5a6;
+  font-size: 12px;
+}
+
+.intent-value {
+  color: #e94560;
+  font-weight: 600;
+}
+
+.intent-damage {
+  color: #ecf0f1;
+  font-weight: 700;
+}
+
+.intent-crit {
+  color: #f0c040;
+  font-size: 12px;
+}
+
+.intent-skills {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.intent-skill-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+// Boss pressure
+.boss-pressure {
+  margin-top: 6px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.pressure-warn {
+  color: #f39c12;
+  font-weight: 600;
+}
+
+.pressure-active {
+  color: #e74c3c;
+  font-weight: 700;
 }
 </style>

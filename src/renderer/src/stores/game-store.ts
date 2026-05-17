@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Hero, BattleState, Card, SaveData, BattleLogEntry } from '@/game/types'
+import type { Hero, BattleState, Card, SaveData, BattleLogEntry, MonsterIntent } from '@/game/types'
 import { createInitialHero, createBattle, playCard, applyVictoryGrowth, resetToInitialHero, skipTurn } from '@/game/game-engine'
+import { generateMonsterIntent } from '@/game/monster-intent'
 
 function clonePlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value))
@@ -25,6 +26,44 @@ function normalizeBattleState(battle: BattleState, level: number): BattleState {
   }
   const logs: BattleLogEntry[] = battle.logs ?? []
 
+  // Generate missing monsterIntent for active non-game-over battles
+  let monsterIntent: MonsterIntent
+  if (battle.monsterIntent) {
+    monsterIntent = battle.monsterIntent
+  } else if (!gameOver && hero && monster && battle.currentTurn) {
+    // Old save: normalize phase to playerAction if missing or non-actionable
+    const normalizedPhase = 'playerAction'
+    const isEnraged = monster.isBoss && battle.currentTurn > 15
+    monsterIntent = generateMonsterIntent({
+      level: battle.level ?? level,
+      hero,
+      monster,
+      currentTurn: battle.currentTurn,
+      maxTurns: battle.maxTurns ?? 20,
+      isEnraged,
+      source: 'restored',
+    })
+    return {
+      ...battle,
+      level: battle.level ?? level,
+      hero,
+      monster,
+      cards: battle.cards ?? [],
+      logs,
+      phase: normalizedPhase,
+      result,
+      statusEffects: battle.statusEffects ?? (hero.isStunned ? [{ target: 'hero', type: 'stun' }] : []),
+      events: battle.events ?? [],
+      isPlayerTurn: normalizedPhase === 'playerAction' && !gameOver,
+      gameOver,
+      winner: result?.winner ?? battle.winner ?? null,
+      monsterIntent,
+    }
+  } else {
+    // Completed battle / gameOver: placeholder (not used for player input)
+    monsterIntent = null as unknown as MonsterIntent
+  }
+
   return {
     ...battle,
     level: battle.level ?? level,
@@ -39,6 +78,7 @@ function normalizeBattleState(battle: BattleState, level: number): BattleState {
     isPlayerTurn: phase === 'playerAction' && !gameOver,
     gameOver,
     winner: result?.winner ?? battle.winner ?? null,
+    monsterIntent,
   }
 }
 

@@ -5,6 +5,7 @@
       v-for="card in cards"
       :key="card.id"
       :card="card"
+      :estimate="estimates[card.id]"
       :disabled="isStunned && (card.type === 'physical' || card.type === 'magic')"
       @play="$emit('play-card', $event)"
     />
@@ -20,15 +21,24 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Card } from '../game/types'
+import type { Card, BattleState, CardOutcomeEstimate } from '../game/types'
+import { estimateCardOutcome } from '../game/monster-intent'
 import CardComponent from './CardComponent.vue'
 
-const props = defineProps<{ cards: Card[]; isStunned?: boolean }>()
+const props = defineProps<{ cards: Card[]; isStunned?: boolean; battleState: BattleState }>()
 defineEmits<{ 'play-card': [card: Card]; 'skip-turn': [] }>()
 
 const hasOnlyAttackCards = computed(() =>
   props.cards.every(c => c.type === 'physical' || c.type === 'magic')
 )
+
+const estimates = computed<Record<string, CardOutcomeEstimate>>(() => {
+  const result: Record<string, CardOutcomeEstimate> = {}
+  for (const card of props.cards) {
+    result[card.id] = estimateCardOutcome(props.battleState, card)
+  }
+  return result
+})
 </script>
 
 <style lang="scss" scoped>

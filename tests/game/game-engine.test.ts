@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createInitialHero, createBattle, playCard, applyVictoryGrowth, skipTurn } from '@/game/game-engine'
-import type { BattleState, Card } from '@/game/types'
+import { generateMonsterIntent } from '@/game/monster-intent'
+import type { BattleState, Card, MonsterSkill } from '@/game/types'
 
 function noSkillBattle(level = 1): BattleState {
   const battle = createBattle(level, createInitialHero())
@@ -21,6 +22,32 @@ function noSkillBattle(level = 1): BattleState {
       skills: [],
     },
   }
+}
+
+function battleWithMonsterSkills(skills: MonsterSkill[], overrides?: Partial<BattleState>): BattleState {
+  const base = noSkillBattle()
+  const { monster: overrideMonster, ...restOverrides } = overrides ?? {}
+  const monster = {
+    ...base.monster,
+    ...overrideMonster,
+    skills,
+  }
+  const battle: BattleState = {
+    ...base,
+    monster,
+    ...restOverrides,
+  }
+  // Regenerate intent to match the new monster skills
+  const intent = generateMonsterIntent({
+    level: battle.level,
+    hero: battle.hero,
+    monster: battle.monster,
+    currentTurn: battle.currentTurn,
+    maxTurns: battle.maxTurns,
+    isEnraged: battle.isEnraged,
+    source: 'generated',
+  })
+  return { ...battle, monsterIntent: intent }
 }
 
 function card(overrides: Partial<Card>): Card {
@@ -166,18 +193,15 @@ describe('playCard', () => {
   })
 
   it('monster lifesteal heals from monster-dealt damage', () => {
-    const battle = {
-      ...noSkillBattle(),
-      hero: {
-        ...noSkillBattle().hero,
-        stats: { ...noSkillBattle().hero.stats, defense: 0 },
-      },
+    const baseHero = noSkillBattle().hero
+    const baseMonster = noSkillBattle().monster
+    const battle = battleWithMonsterSkills([{ type: 'lifesteal', triggerChance: 100 }], {
+      hero: { ...baseHero, stats: { ...baseHero.stats, defense: 0 } },
       monster: {
-        ...noSkillBattle().monster,
+        ...baseMonster,
         currentHp: 20,
-        skills: [{ type: 'lifesteal' as const, triggerChance: 100 }],
       },
-    }
+    })
 
     const newState = skipTurn(battle)
 
@@ -186,8 +210,7 @@ describe('playCard', () => {
   })
 
   it('hero damage does not trigger monster lifesteal', () => {
-    const battle = {
-      ...noSkillBattle(),
+    const battle = battleWithMonsterSkills([{ type: 'lifesteal', triggerChance: 100 }], {
       hero: {
         ...noSkillBattle().hero,
         stats: { ...noSkillBattle().hero.stats, defense: 100 },
@@ -195,9 +218,8 @@ describe('playCard', () => {
       monster: {
         ...noSkillBattle().monster,
         currentHp: 30,
-        skills: [{ type: 'lifesteal' as const, triggerChance: 100 }],
       },
-    }
+    })
     const attackCard = card({ type: 'physical', coefficient: 1, element: battle.monster.element })
 
     const { newState } = playCard(battle, attackCard)

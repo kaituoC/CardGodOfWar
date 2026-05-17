@@ -6,21 +6,21 @@ import type {
   Card,
   Element,
   Hero,
-  Monster,
   MonsterSkill,
   MonsterSkillType,
+  MonsterIntent,
   Stats,
 } from './types'
 import type { DamageResult } from './battle-calculator'
 import { calculateDamage } from './battle-calculator'
 import { generateCards } from './card-pool'
 import { generateMonster } from './monster-generator'
+import { generateMonsterIntent } from './monster-intent'
 import {
   HERO_INITIAL_STATS,
   HERO_VICTORY_GROWTH,
   MAX_TURNS,
   ENRAGE_START_TURN,
-  ENRAGE_DAMAGE_PER_TURN,
 } from './constants'
 
 const elementNames: Record<Element, string> = { fire: '火', thunder: '雷', water: '水' }
@@ -62,10 +62,13 @@ function eventToLog(event: BattleEvent): BattleLogEntry {
 }
 
 function appendEvents(state: BattleState, events: BattleEvent[]): BattleState {
+  const logEntries = events
+    .filter(e => e.type !== 'intentCreated' && e.type !== 'intentConsumed')
+    .map(eventToLog)
   return {
     ...state,
     events: [...state.events, ...events],
-    logs: [...state.logs, ...events.map(eventToLog)],
+    logs: [...state.logs, ...logEntries],
   }
 }
 
@@ -99,13 +102,7 @@ function withResult(state: BattleState, result: BattleResult, events: BattleEven
   }
 }
 
-function triggeredSkill(monster: Monster, skillType: MonsterSkillType): MonsterSkill | null {
-  const skill = monster.skills.find(s => s.type === skillType)
-  if (!skill) return null
-  return Math.random() * 100 < skill.triggerChance ? skill : null
-}
-
-function createSkillEvent(turn: number, skill: MonsterSkill): BattleEvent {
+function createSkillEvent(turn: number, skill: MonsterSkill, intentId?: string): BattleEvent {
   const suffix = skill.immuneElement ? `(${elementNames[skill.immuneElement]})` : ''
   return createEvent({
     type: 'skillTriggered',
@@ -113,7 +110,26 @@ function createSkillEvent(turn: number, skill: MonsterSkill): BattleEvent {
     actor: 'monster',
     skill: skill.type,
     immuneElement: skill.immuneElement,
+    intentId,
     message: `怪兽触发${skillNames[skill.type]}${suffix}`,
+  })
+}
+
+function createIntentCreatedEvent(turn: number, intentId: string): BattleEvent {
+  return createEvent({
+    type: 'intentCreated',
+    turn,
+    intentId,
+    message: `怪兽意图已生成: ${intentId}`,
+  })
+}
+
+function createIntentConsumedEvent(turn: number, intentId: string): BattleEvent {
+  return createEvent({
+    type: 'intentConsumed',
+    turn,
+    intentId,
+    message: `怪兽意图已执行: ${intentId}`,
   })
 }
 
@@ -129,7 +145,7 @@ export function createInitialHero(): Hero {
 export function createBattle(level: number, hero: Hero): BattleState {
   const monster = generateMonster(level)
   const battleHero = { ...hero, stats: { ...hero.stats }, isStunned: false }
-  return {
+  const initialState: BattleState = {
     level,
     hero: battleHero,
     monster,
@@ -145,7 +161,26 @@ export function createBattle(level: number, hero: Hero): BattleState {
     isEnraged: false,
     gameOver: false,
     winner: null,
+    monsterIntent: null as unknown as MonsterIntent, // will be set below
   }
+
+  const intent = generateMonsterIntent({
+    level,
+    hero: battleHero,
+    monster,
+    currentTurn: 1,
+    maxTurns: MAX_TURNS,
+    isEnraged: false,
+    source: 'generated',
+  })
+
+  initialState.monsterIntent = intent
+  initialState.events = [createIntentCreatedEvent(1, intent.id)]
+  initialState.logs = initialState.events
+    .filter(e => e.type !== 'intentCreated' && e.type !== 'intentConsumed')
+    .map(eventToLog)
+
+  return initialState
 }
 
 export function playCard(state: BattleState, card: Card): { newState: BattleState; damageResult?: DamageResult } {
@@ -212,11 +247,13 @@ function resolveHeroAction(state: BattleState, card: Card | null): { state: Batt
 
   if (card.type === 'physical' || card.type === 'magic') {
     const attack = card.type === 'physical' ? state.hero.stats.physicalAttack : state.hero.stats.magicAttack
-    const shield = triggeredSkill(state.monster, 'shield')
-    const immune = triggeredSkill(state.monster, 'elementImmune')
+    const intent = state.monsterIntent
+    const shield = intent?.skills.find(s => s.type === 'shield' && s.willTrigger)
+    const immune = intent?.skills.find(s => s.type === 'elementImmune' && s.willTrigger)
+    const intentId = intent?.id
 
-    if (shield) events.push(createSkillEvent(state.currentTurn, shield))
-    if (immune) events.push(createSkillEvent(state.currentTurn, immune))
+    if (shield) events.push(createSkillEvent(state.currentTurn, { type: 'shield', triggerChance: 100 }, intentId))
+    if (immune) events.push(createSkillEvent(state.currentTurn, { type: 'elementImmune', immuneElement: immune.immuneElement, triggerChance: 100 }, intentId))
 
     damageResult = calculateDamage({
       attack,
@@ -254,6 +291,7 @@ function resolveHeroAction(state: BattleState, card: Card | null): { state: Batt
       isShield: Boolean(shield),
       isImmune: immune?.immuneElement === card.element,
       enrageMultiplier: 1.0,
+      intentId,
       message: `英雄使用${typeLabel}攻击: ${attack} × ${card.coefficient} = ${Math.round(damageResult.baseDamage * 10) / 10}${elementText}, 防御-${state.monster.stats.defense} = ${damageResult.finalDamage}伤害${critText}`,
     }))
 
@@ -349,26 +387,31 @@ function consumeStunIfNeeded(state: BattleState, events: BattleEvent[]): BattleS
 
 function resolveMonsterAction(state: BattleState): { state: BattleState; damageResult?: DamageResult } {
   const events: BattleEvent[] = []
-  const critBoost = triggeredSkill(state.monster, 'critBoost')
-  const lifesteal = triggeredSkill(state.monster, 'lifesteal')
-  const stun = triggeredSkill(state.monster, 'stun')
+  const intent = state.monsterIntent
+  const intentId = intent.id
 
-  if (critBoost) events.push(createSkillEvent(state.currentTurn, critBoost))
-  if (lifesteal) events.push(createSkillEvent(state.currentTurn, lifesteal))
-  if (stun) events.push(createSkillEvent(state.currentTurn, stun))
+  // Execute intent consumed event
+  events.push(createIntentConsumedEvent(state.currentTurn, intentId))
 
-  const isPhysical = Math.random() > 0.5
-  const attack = isPhysical ? state.monster.stats.physicalAttack : state.monster.stats.magicAttack
-  const typeLabel = isPhysical ? '物理' : '魔法'
-  const enrageMultiplier = state.monster.isBoss && state.isEnraged
-    ? 1 + (state.currentTurn - ENRAGE_START_TURN) * ENRAGE_DAMAGE_PER_TURN
-    : 1.0
+  // Read skills from intent (no re-rolling)
+  const critBoost = intent.skills.find(s => s.type === 'critBoost' && s.willTrigger)
+  const lifesteal = intent.skills.find(s => s.type === 'lifesteal' && s.willTrigger)
+  const stun = intent.skills.find(s => s.type === 'stun' && s.willTrigger)
+
+  if (critBoost) events.push(createSkillEvent(state.currentTurn, { type: 'critBoost', triggerChance: 100 }, intentId))
+  if (lifesteal) events.push(createSkillEvent(state.currentTurn, { type: 'lifesteal', triggerChance: 100 }, intentId))
+  if (stun) events.push(createSkillEvent(state.currentTurn, { type: 'stun', triggerChance: 100 }, intentId))
+
+  const attackType = intent.attackType
+  const attack = intent.baseAttack
+  const typeLabel = attackType === 'physical' ? '物理' : '魔法'
+  const enrageMultiplier = intent.enrageMultiplier
 
   const damageResult = calculateDamage({
     attack,
     coefficient: 1.0,
     defense: state.hero.stats.defense,
-    cardElement: state.monster.element,
+    cardElement: intent.element,
     monsterElement: state.monster.element,
     critRate: state.monster.stats.critRate,
     isShield: false,
@@ -388,13 +431,14 @@ function resolveMonsterAction(state: BattleState): { state: BattleState; damageR
     actor: 'monster',
     target: 'hero',
     amount: damageResult.finalDamage,
-    damageType: isPhysical ? 'physical' : 'magic',
-    element: state.monster.element,
+    damageType: attackType,
+    element: intent.element,
     elementMultiplier: damageResult.elementMultiplier,
     isCrit: damageResult.isCrit,
     isShield: false,
     isImmune: false,
     enrageMultiplier,
+    intentId,
     message: `怪兽${typeLabel}攻击: ${attack} × 1.0 - ${state.hero.stats.defense} = ${damageResult.finalDamage}伤害${critText}${enrageText}`,
   }))
 
@@ -411,6 +455,7 @@ function resolveMonsterAction(state: BattleState): { state: BattleState; damageR
       beforeHp: state.monster.currentHp,
       afterHp: healedHp,
       source: 'lifesteal',
+      intentId,
       message: `怪兽吸血恢复 ${healedHp - state.monster.currentHp} HP`,
     }))
     nextMonster = { ...state.monster, currentHp: healedHp }
@@ -426,6 +471,7 @@ function resolveMonsterAction(state: BattleState): { state: BattleState; damageR
       target: 'hero',
       status: 'stun',
       action: 'applied',
+      intentId,
       message: '怪兽使英雄陷入眩晕',
     }))
   }
@@ -455,12 +501,26 @@ function finishTurn(state: BattleState): BattleState {
     }, { winner: 'monster', reason: 'turnLimit' }, [])
   }
 
+  const isEnraged = state.monster.isBoss && nextTurn > ENRAGE_START_TURN
+
+  // Generate new intent for next turn
+  const intent = generateMonsterIntent({
+    level: state.level,
+    hero: state.hero,
+    monster: state.monster,
+    currentTurn: nextTurn,
+    maxTurns: state.maxTurns,
+    isEnraged,
+    source: 'generated',
+  })
+
   const turnEvent = createEvent({
     type: 'turnAdvanced',
     turn: state.currentTurn,
     nextTurn,
     message: `进入第 ${nextTurn} 回合`,
   })
+  const intentEvent = createIntentCreatedEvent(nextTurn, intent.id)
 
   const nextState = appendEvents({
     ...state,
@@ -468,11 +528,12 @@ function finishTurn(state: BattleState): BattleState {
     currentTurn: nextTurn,
     cards: generateCards(state.level),
     isPlayerTurn: true,
-    isEnraged: state.monster.isBoss && nextTurn > ENRAGE_START_TURN,
+    isEnraged,
     gameOver: false,
     winner: null,
     result: null,
-  }, [turnEvent])
+    monsterIntent: intent,
+  }, [turnEvent, intentEvent])
 
   return nextState
 }

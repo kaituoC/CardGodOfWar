@@ -10,7 +10,7 @@
 
     <div class="status-row">
       <HeroStatus :hero="battleState.hero" :class="{ 'damage-flash': heroFlash }" />
-      <MonsterStatus :monster="battleState.monster" :class="{ 'damage-flash': monsterFlash }" />
+      <MonsterStatus :monster="battleState.monster" :battle-state="battleState" :class="{ 'damage-flash': monsterFlash }" />
     </div>
 
     <div class="battle-content">
@@ -19,6 +19,7 @@
           <CardHand
             :cards="battleState.cards"
             :is-stunned="battleState.hero.isStunned"
+            :battle-state="battleState"
             @play-card="gameStore.playCardAction"
             @skip-turn="gameStore.skipTurnAction"
           />

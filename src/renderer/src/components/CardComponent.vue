@@ -18,15 +18,17 @@
     <div v-if="card.type === 'statBoost' && card.statBoost" class="card-stat-boost">
       {{ statLabel }} +{{ card.statBoost.value }}
     </div>
+    <!-- Estimate line -->
+    <div v-if="estimate" class="card-estimate">{{ estimateText }}</div>
     <div class="card-action">{{ disabled ? '禁用' : '使用' }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Card } from '../game/types'
+import type { Card, CardOutcomeEstimate } from '../game/types'
 
-const props = defineProps<{ card: Card; disabled?: boolean }>()
+const props = defineProps<{ card: Card; disabled?: boolean; estimate?: CardOutcomeEstimate }>()
 defineEmits<{ play: [card: Card] }>()
 
 const typeIcons: Record<string, string> = { physical: '⚔️', magic: '✨', heal: '💚', statBoost: '⬆️' }
@@ -38,6 +40,12 @@ const typeIcon = computed(() => typeIcons[props.card.type] || '')
 const typeName = computed(() => typeNames[props.card.type] || '')
 const elementLabel = computed(() => elementLabels[props.card.element ?? ''] || '')
 const statLabel = computed(() => props.card.statBoost ? statLabels[props.card.statBoost.stat] : '')
+
+const estimateText = computed(() => {
+  if (!props.estimate) return ''
+  if (props.estimate.type === 'blocked') return props.estimate.text
+  return props.estimate.text
+})
 </script>
 
 <style lang="scss" scoped>
@@ -96,6 +104,14 @@ const statLabel = computed(() => props.card.statBoost ? statLabels[props.card.st
   font-size: 14px;
   color: #27ae60;
   font-weight: bold;
+}
+
+.card-estimate {
+  font-size: 12px;
+  color: #bdc3c7;
+  text-align: center;
+  line-height: 1.4;
+  white-space: pre-wrap;
 }
 
 .card-action {

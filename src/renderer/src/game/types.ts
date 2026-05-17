@@ -106,6 +106,7 @@ export interface DamageEvent extends BattleEventBase {
   isShield: boolean
   isImmune: boolean
   enrageMultiplier: number
+  intentId?: string
 }
 
 export interface HealEvent extends BattleEventBase {
@@ -116,6 +117,7 @@ export interface HealEvent extends BattleEventBase {
   beforeHp: number
   afterHp: number
   source: 'card' | 'lifesteal'
+  intentId?: string
 }
 
 export interface StatBoostEvent extends BattleEventBase {
@@ -133,6 +135,7 @@ export interface SkillTriggeredEvent extends BattleEventBase {
   actor: 'monster'
   skill: MonsterSkillType
   immuneElement?: Element
+  intentId?: string
 }
 
 export interface StatusEvent extends BattleEventBase {
@@ -141,6 +144,7 @@ export interface StatusEvent extends BattleEventBase {
   target: BattleActor
   status: BattleStatusType
   action: 'applied' | 'consumed' | 'rejected'
+  intentId?: string
 }
 
 export interface TurnSkippedEvent extends BattleEventBase {
@@ -159,6 +163,16 @@ export interface BattleEndedEvent extends BattleEventBase {
   reason: 'defeat' | 'turnLimit'
 }
 
+export interface IntentCreatedEvent extends BattleEventBase {
+  type: 'intentCreated'
+  intentId: string
+}
+
+export interface IntentConsumedEvent extends BattleEventBase {
+  type: 'intentConsumed'
+  intentId: string
+}
+
 export type BattleEvent =
   | DamageEvent
   | HealEvent
@@ -168,6 +182,78 @@ export type BattleEvent =
   | TurnSkippedEvent
   | TurnAdvancedEvent
   | BattleEndedEvent
+  | IntentCreatedEvent
+  | IntentConsumedEvent
+
+export type MonsterIntentAction = 'attack'
+export type IntentSkillTiming = 'monsterAction' | 'heroActionDefense'
+
+export interface MonsterIntentSkill {
+  type: MonsterSkillType
+  timing: IntentSkillTiming
+  immuneElement?: Element
+  willTrigger: boolean
+  label: string
+}
+
+export interface MonsterIntent {
+  id: string
+  turn: number
+  source: 'generated' | 'restored'
+  action: MonsterIntentAction
+  attackType: 'physical' | 'magic'
+  baseAttack: number
+  estimatedDamage: number
+  critDamage: number
+  critRate: number
+  element: Element
+  enrageMultiplier: number
+  skills: MonsterIntentSkill[]
+  message: string
+}
+
+export interface GenerateMonsterIntentInput {
+  level: number
+  hero: Hero
+  monster: Monster
+  currentTurn: number
+  maxTurns: number
+  isEnraged: boolean
+  source?: 'generated' | 'restored'
+}
+
+export interface DamagePreview {
+  baseDamage: number
+  afterDefense: number
+  elementMultiplier: number
+  estimatedDamage: number
+  critDamage: number
+  critRate: number
+  critMultiplier: number
+}
+
+export type CardOutcomeEstimate =
+  | {
+      type: 'damage'
+      amount: number
+      critDamage: number
+      critRate: number
+      critMultiplier: number
+      critLabel: '暴击' | '强化暴击'
+      elementMultiplier: number
+      isBlockedByStun: false
+      isShielded: boolean
+      isImmune: boolean
+      text: string
+    }
+  | {
+      type: 'blocked'
+      reason: 'stun'
+      isBlockedByStun: true
+      text: '眩晕中'
+    }
+  | { type: 'heal'; amount: number; text: string }
+  | { type: 'statBoost'; stat: keyof Stats; amount: number; text: string }
 
 // 战斗状态
 export interface BattleState {
@@ -176,16 +262,17 @@ export interface BattleState {
   monster: Monster
   currentTurn: number
   maxTurns: number
-  cards: Card[] // 当前回合的3张卡牌
+  cards: Card[]
   phase: BattlePhase
   result: BattleResult | null
   statusEffects: BattleStatusEffect[]
   events: BattleEvent[]
   logs: BattleLogEntry[]
   isPlayerTurn: boolean
-  isEnraged: boolean // Boss狂暴
+  isEnraged: boolean
   gameOver: boolean
   winner: 'hero' | 'monster' | null
+  monsterIntent: MonsterIntent
 }
 
 // 存档数据
