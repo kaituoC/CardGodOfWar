@@ -14,32 +14,9 @@
 </template>
 
 <script setup lang="ts">
-interface FloatingNumber {
-  id: number
-  type: 'damage' | 'heal' | 'crit' | 'element'
-  value: string
-  text?: string
-  x: number
-  y: number
-}
+import type { FloatingNumber } from '../game/floating-numbers'
 
 const numbers = defineModel<FloatingNumber[]>('modelValue', { required: true })
-
-let nextId = 0
-
-export function pushDamageNumber(
-  type: FloatingNumber['type'],
-  value: string,
-  text: string | undefined,
-  x: number,
-  y: number,
-) {
-  const num: FloatingNumber = { id: nextId++, type, value, text, x, y }
-  numbers.value = [...numbers.value, num]
-  setTimeout(() => {
-    numbers.value = numbers.value.filter(n => n.id !== num.id)
-  }, 800)
-}
 </script>
 
 <style lang="scss" scoped>

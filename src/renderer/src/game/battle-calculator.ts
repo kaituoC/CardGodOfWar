@@ -59,7 +59,7 @@ export function calculateDamage(params: DamageCalculationParams): DamageResult {
   // Step 3: Element multiplier
   let elementMultiplier: number
   if (isImmuneToElement === cardElement) {
-    elementMultiplier = 0
+    elementMultiplier = 1.0 // 免疫时不受克制/被克影响
   } else {
     elementMultiplier = getElementMultiplier(cardElement, monsterElement)
   }

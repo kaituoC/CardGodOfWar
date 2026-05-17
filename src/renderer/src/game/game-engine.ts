@@ -1,6 +1,15 @@
 import type {
-  BattleState, Hero, Monster, Card,
-  BattleLogEntry, Element, MonsterSkillType, Stats,
+  BattleEvent,
+  BattleLogEntry,
+  BattleResult,
+  BattleState,
+  Card,
+  Element,
+  Hero,
+  Monster,
+  MonsterSkill,
+  MonsterSkillType,
+  Stats,
 } from './types'
 import type { DamageResult } from './battle-calculator'
 import { calculateDamage } from './battle-calculator'
@@ -14,6 +23,100 @@ import {
   ENRAGE_DAMAGE_PER_TURN,
 } from './constants'
 
+const elementNames: Record<Element, string> = { fire: '火', thunder: '雷', water: '水' }
+const statNames: Record<keyof Stats, string> = {
+  physicalAttack: '物攻',
+  magicAttack: '魔攻',
+  defense: '防御',
+  maxHp: '最大HP',
+  critRate: '暴击率',
+}
+const skillNames: Record<MonsterSkillType, string> = {
+  shield: '护盾',
+  lifesteal: '吸血',
+  critBoost: '暴击强化',
+  elementImmune: '元素免疫',
+  stun: '眩晕',
+}
+
+let eventIdCounter = 0
+
+type BattleEventInput = BattleEvent extends infer T
+  ? T extends { id: string }
+    ? Omit<T, 'id'>
+    : never
+  : never
+
+function createEvent(event: BattleEventInput): BattleEvent {
+  eventIdCounter += 1
+  return { ...event, id: `event-${eventIdCounter}` }
+}
+
+function eventToLog(event: BattleEvent): BattleLogEntry {
+  return {
+    turn: event.turn,
+    message: event.message,
+    isHeroAction: event.actor === 'hero' || (event.type === 'battleEnded' && event.winner === 'hero'),
+    eventId: event.id,
+  }
+}
+
+function appendEvents(state: BattleState, events: BattleEvent[]): BattleState {
+  return {
+    ...state,
+    events: [...state.events, ...events],
+    logs: [...state.logs, ...events.map(eventToLog)],
+  }
+}
+
+function isAttackCard(card: Card): boolean {
+  return card.type === 'physical' || card.type === 'magic'
+}
+
+function activeStatusEffects(hero: Hero) {
+  return hero.isStunned ? [{ target: 'hero' as const, type: 'stun' as const }] : []
+}
+
+function withResult(state: BattleState, result: BattleResult, events: BattleEvent[]): BattleState {
+  const next = appendEvents(state, [
+    ...events,
+    createEvent({
+      type: 'battleEnded',
+      turn: state.currentTurn,
+      winner: result.winner,
+      reason: result.reason,
+      message: result.winner === 'hero' ? '战斗胜利！' : result.reason === 'turnLimit' ? '回合耗尽，挑战失败' : '英雄被击败了',
+    }),
+  ])
+
+  return {
+    ...next,
+    phase: 'gameOver',
+    result,
+    isPlayerTurn: false,
+    gameOver: true,
+    winner: result.winner,
+  }
+}
+
+function triggeredSkill(monster: Monster, skillType: MonsterSkillType): MonsterSkill | null {
+  const skill = monster.skills.find(s => s.type === skillType)
+  if (!skill) return null
+  return Math.random() * 100 < skill.triggerChance ? skill : null
+}
+
+function createSkillEvent(turn: number, skill: MonsterSkill): BattleEvent {
+  const suffix = skill.immuneElement ? `(${elementNames[skill.immuneElement]})` : ''
+  return createEvent({
+    type: 'skillTriggered',
+    turn,
+    actor: 'monster',
+    skill: skill.type,
+    immuneElement: skill.immuneElement,
+    message: `怪兽触发${skillNames[skill.type]}${suffix}`,
+  })
+}
+
 export function createInitialHero(): Hero {
   const stats = { ...HERO_INITIAL_STATS }
   return {
@@ -25,12 +128,18 @@ export function createInitialHero(): Hero {
 
 export function createBattle(level: number, hero: Hero): BattleState {
   const monster = generateMonster(level)
+  const battleHero = { ...hero, stats: { ...hero.stats }, isStunned: false }
   return {
-    hero: { ...hero, isStunned: false },
+    level,
+    hero: battleHero,
     monster,
     currentTurn: 1,
     maxTurns: MAX_TURNS,
     cards: generateCards(level),
+    phase: 'playerAction',
+    result: null,
+    statusEffects: activeStatusEffects(battleHero),
+    events: [],
     logs: [],
     isPlayerTurn: true,
     isEnraged: false,
@@ -40,203 +149,332 @@ export function createBattle(level: number, hero: Hero): BattleState {
 }
 
 export function playCard(state: BattleState, card: Card): { newState: BattleState; damageResult?: DamageResult } {
-  const { hero, monster, currentTurn, isEnraged } = state
-  const newLogs: BattleLogEntry[] = []
+  if (state.phase !== 'playerAction' || state.gameOver) return { newState: state }
+
+  if (isAttackCard(card) && state.hero.isStunned) {
+    const rejected = createEvent({
+      type: 'status',
+      turn: state.currentTurn,
+      actor: 'hero',
+      target: 'hero',
+      status: 'stun',
+      action: 'rejected',
+      message: '眩晕中！无法使用攻击卡牌！',
+    })
+    return { newState: appendEvents(state, [rejected]) }
+  }
+
+  return resolvePlayerAction(state, card)
+}
+
+export function skipTurn(state: BattleState): BattleState {
+  if (state.phase !== 'playerAction' || state.gameOver) return state
+  return resolvePlayerAction(state, null).newState
+}
+
+function resolvePlayerAction(state: BattleState, card: Card | null): { newState: BattleState; damageResult?: DamageResult } {
+  const playerResult = resolveHeroAction(state, card)
+  let nextState = playerResult.state
+  let damageResult = playerResult.damageResult
+
+  if (nextState.gameOver) return { newState: nextState, damageResult }
+
+  nextState = {
+    ...nextState,
+    phase: 'monsterAction',
+    isPlayerTurn: false,
+  }
+
+  const monsterResult = resolveMonsterAction(nextState)
+  nextState = monsterResult.state
+  damageResult = damageResult ?? monsterResult.damageResult
+
+  if (nextState.gameOver) return { newState: nextState, damageResult }
+
+  nextState = finishTurn(nextState)
+  return { newState: nextState, damageResult }
+}
+
+function resolveHeroAction(state: BattleState, card: Card | null): { state: BattleState; damageResult?: DamageResult } {
+  const events: BattleEvent[] = []
+  let nextState = state
+  let damageResult: DamageResult | undefined
+
+  if (card === null) {
+    events.push(createEvent({
+      type: 'turnSkipped',
+      turn: state.currentTurn,
+      actor: 'hero',
+      message: '英雄跳过行动',
+    }))
+    return { state: consumeStunIfNeeded(nextState, events) }
+  }
 
   if (card.type === 'physical' || card.type === 'magic') {
-    if (hero.isStunned) {
-      newLogs.push({
-        turn: currentTurn,
-        message: '眩晕中！无法使用攻击卡牌！',
-        isHeroAction: true,
-      })
-      return { newState: { ...state, logs: [...state.logs, ...newLogs] } }
-    }
+    const attack = card.type === 'physical' ? state.hero.stats.physicalAttack : state.hero.stats.magicAttack
+    const shield = triggeredSkill(state.monster, 'shield')
+    const immune = triggeredSkill(state.monster, 'elementImmune')
 
-    const attack = card.type === 'physical' ? hero.stats.physicalAttack : hero.stats.magicAttack
-    const skillEffects = getMonsterSkillEffectsForTurn(monster, currentTurn)
+    if (shield) events.push(createSkillEvent(state.currentTurn, shield))
+    if (immune) events.push(createSkillEvent(state.currentTurn, immune))
 
-    const damageResult = calculateDamage({
+    damageResult = calculateDamage({
       attack,
       coefficient: card.coefficient,
-      defense: monster.stats.defense,
-      cardElement: card.element,
-      monsterElement: monster.element,
-      critRate: hero.stats.critRate,
-      isShield: skillEffects.isShield,
+      defense: state.monster.stats.defense,
+      cardElement: card.element!,
+      monsterElement: state.monster.element,
+      critRate: state.hero.stats.critRate,
+      isShield: Boolean(shield),
       isCritBoost: false,
-      isImmuneToElement: skillEffects.immuneElement,
+      isImmuneToElement: immune?.immuneElement ?? null,
       enrageMultiplier: 1.0,
       isMonsterAttacking: false,
     })
 
-    let newMonsterHp = Math.max(monster.currentHp - damageResult.finalDamage, 0)
-
-    const elementNames: Record<Element, string> = { fire: '火', thunder: '雷', water: '水' }
+    const monsterHp = Math.max(state.monster.currentHp - damageResult.finalDamage, 0)
     const typeLabel = card.type === 'physical' ? '物理' : '魔法'
-    const attackValue = card.type === 'physical' ? hero.stats.physicalAttack : hero.stats.magicAttack
-    let logMsg = `英雄使用${typeLabel}攻击: ${attackValue} × ${card.coefficient} = ${Math.round(attackValue * card.coefficient * 10) / 10}`
+    const elementText = damageResult.elementMultiplier !== 1.0
+      ? `, ${elementNames[card.element!]}${damageResult.elementMultiplier > 1 ? '克制' : '被克'}${elementNames[state.monster.element]} ×${damageResult.elementMultiplier}`
+      : immune?.immuneElement === card.element
+        ? `, ${elementNames[card.element!]}免疫中性 ×1`
+        : ''
+    const critText = damageResult.isCrit ? ' 暴击！' : ''
 
-    if (damageResult.elementMultiplier !== 1.0) {
-      const advOrDis = damageResult.elementMultiplier > 1 ? '克制' : '被克'
-      logMsg += `, ${elementNames[card.element]}${advOrDis}${elementNames[monster.element]} ×${damageResult.elementMultiplier}`
+    events.push(createEvent({
+      type: 'damage',
+      turn: state.currentTurn,
+      actor: 'hero',
+      target: 'monster',
+      amount: damageResult.finalDamage,
+      damageType: card.type,
+      element: card.element,
+      elementMultiplier: damageResult.elementMultiplier,
+      isCrit: damageResult.isCrit,
+      isShield: Boolean(shield),
+      isImmune: immune?.immuneElement === card.element,
+      enrageMultiplier: 1.0,
+      message: `英雄使用${typeLabel}攻击: ${attack} × ${card.coefficient} = ${Math.round(damageResult.baseDamage * 10) / 10}${elementText}, 防御-${state.monster.stats.defense} = ${damageResult.finalDamage}伤害${critText}`,
+    }))
+
+    nextState = {
+      ...state,
+      monster: { ...state.monster, currentHp: monsterHp },
     }
-    logMsg += `, 防御-${monster.stats.defense} = ${damageResult.finalDamage}伤害`
-    if (damageResult.isCrit) logMsg += ' 🔥暴击！'
 
-    newLogs.push({ turn: currentTurn, message: logMsg, isHeroAction: true })
-
-    if (skillEffects.hasLifesteal) {
-      const lifestealHp = Math.floor(damageResult.finalDamage * 0.3)
-      newMonsterHp = Math.min(newMonsterHp + lifestealHp, monster.stats.maxHp)
-      newLogs.push({
-        turn: currentTurn,
-        message: `怪兽吸血恢复 ${lifestealHp} HP`,
-        isHeroAction: false,
-      })
-    }
-
-    if (newMonsterHp <= 0) {
+    if (monsterHp <= 0) {
       return {
-        newState: {
-          ...state,
-          monster: { ...state.monster, currentHp: 0 },
-          logs: [...state.logs, ...newLogs],
-          gameOver: true,
-          winner: 'hero',
-        },
+        state: withResult(nextState, { winner: 'hero', reason: 'defeat' }, events),
         damageResult,
       }
     }
 
-    return monsterCounterAttack(
-      { ...state, monster: { ...state.monster, currentHp: newMonsterHp }, logs: [...state.logs, ...newLogs] },
-      currentTurn,
-      isEnraged,
-    )
+    return { state: appendEvents(nextState, events), damageResult }
   }
 
   if (card.type === 'heal') {
-    const healAmount = Math.floor(hero.stats.maxHp * card.coefficient)
-    const newHp = Math.min(hero.currentHp + healAmount, hero.stats.maxHp)
-    newLogs.push({
-      turn: currentTurn,
-      message: `英雄恢复 ${healAmount} HP (${hero.currentHp} → ${newHp})`,
-      isHeroAction: true,
-    })
+    const healAmount = Math.floor(state.hero.stats.maxHp * card.coefficient)
+    const newHp = Math.min(state.hero.currentHp + healAmount, state.hero.stats.maxHp)
+    events.push(createEvent({
+      type: 'heal',
+      turn: state.currentTurn,
+      actor: 'hero',
+      target: 'hero',
+      amount: newHp - state.hero.currentHp,
+      beforeHp: state.hero.currentHp,
+      afterHp: newHp,
+      source: 'card',
+      message: `英雄恢复 ${newHp - state.hero.currentHp} HP (${state.hero.currentHp} → ${newHp})`,
+    }))
 
-    return monsterCounterAttack(
-      { ...state, hero: { ...hero, currentHp: newHp }, logs: [...state.logs, ...newLogs] },
-      currentTurn,
-      isEnraged,
-    )
+    nextState = {
+      ...state,
+      hero: { ...state.hero, currentHp: newHp },
+    }
+
+    return { state: consumeStunIfNeeded(nextState, events) }
   }
 
   if (card.type === 'statBoost' && card.statBoost) {
     const { stat, value } = card.statBoost
-    const newStats = { ...hero.stats }
-    newStats[stat] = Math.min(newStats[stat] + value, stat === 'critRate' ? 100 : newStats[stat] + value)
-    newLogs.push({
-      turn: currentTurn,
-      message: `英雄${stat}永久 +${value}`,
-      isHeroAction: true,
-    })
+    const beforeValue = state.hero.stats[stat]
+    const afterValue = stat === 'critRate'
+      ? Math.min(beforeValue + value, 100)
+      : beforeValue + value
+    const newStats = { ...state.hero.stats, [stat]: afterValue }
 
-    return monsterCounterAttack(
-      { ...state, hero: { ...hero, stats: newStats }, logs: [...state.logs, ...newLogs] },
-      currentTurn,
-      isEnraged,
-    )
+    events.push(createEvent({
+      type: 'statBoost',
+      turn: state.currentTurn,
+      actor: 'hero',
+      target: 'hero',
+      stat,
+      amount: afterValue - beforeValue,
+      beforeValue,
+      afterValue,
+      message: `英雄${statNames[stat]}永久 +${afterValue - beforeValue}`,
+    }))
+
+    nextState = {
+      ...state,
+      hero: { ...state.hero, stats: newStats },
+    }
+
+    return { state: consumeStunIfNeeded(nextState, events) }
   }
 
-  return { newState: state }
+  return { state }
 }
 
-function getMonsterSkillEffectsForTurn(monster: Monster, _turn: number) {
-  const roll = (skillType: MonsterSkillType) => {
-    const skill = monster.skills.find(s => s.type === skillType)
-    if (!skill) return false
-    return Math.random() * 100 < skill.triggerChance
-  }
+function consumeStunIfNeeded(state: BattleState, events: BattleEvent[]): BattleState {
+  if (!state.hero.isStunned) return appendEvents(state, events)
 
-  return {
-    isShield: roll('shield'),
-    hasLifesteal: roll('lifesteal'),
-    isCritBoost: roll('critBoost'),
-    immuneElement: (monster.skills.find(s => s.type === 'elementImmune') && roll('elementImmune'))
-      ? monster.skills.find(s => s.type === 'elementImmune')?.immuneElement ?? null
-      : null,
-    willStun: roll('stun'),
-  }
+  const hero = { ...state.hero, isStunned: false }
+  events.push(createEvent({
+    type: 'status',
+    turn: state.currentTurn,
+    actor: 'hero',
+    target: 'hero',
+    status: 'stun',
+    action: 'consumed',
+    message: '英雄眩晕已解除',
+  }))
+
+  return appendEvents({
+    ...state,
+    hero,
+    statusEffects: activeStatusEffects(hero),
+  }, events)
 }
 
-function monsterCounterAttack(state: BattleState, turn: number, isEnraged: boolean): { newState: BattleState; damageResult?: DamageResult } {
-  const { hero, monster } = state
-  const newLogs: BattleLogEntry[] = []
+function resolveMonsterAction(state: BattleState): { state: BattleState; damageResult?: DamageResult } {
+  const events: BattleEvent[] = []
+  const critBoost = triggeredSkill(state.monster, 'critBoost')
+  const lifesteal = triggeredSkill(state.monster, 'lifesteal')
+  const stun = triggeredSkill(state.monster, 'stun')
 
-  const skillEffects = getMonsterSkillEffectsForTurn(monster, turn)
+  if (critBoost) events.push(createSkillEvent(state.currentTurn, critBoost))
+  if (lifesteal) events.push(createSkillEvent(state.currentTurn, lifesteal))
+  if (stun) events.push(createSkillEvent(state.currentTurn, stun))
 
   const isPhysical = Math.random() > 0.5
-  const attack = isPhysical ? monster.stats.physicalAttack : monster.stats.magicAttack
+  const attack = isPhysical ? state.monster.stats.physicalAttack : state.monster.stats.magicAttack
   const typeLabel = isPhysical ? '物理' : '魔法'
-
-  const enrageMultiplier = monster.isBoss && isEnraged
-    ? 1 + (turn - ENRAGE_START_TURN) * ENRAGE_DAMAGE_PER_TURN
+  const enrageMultiplier = state.monster.isBoss && state.isEnraged
+    ? 1 + (state.currentTurn - ENRAGE_START_TURN) * ENRAGE_DAMAGE_PER_TURN
     : 1.0
 
   const damageResult = calculateDamage({
     attack,
     coefficient: 1.0,
-    defense: hero.stats.defense,
-    cardElement: monster.element,
-    monsterElement: monster.element,
-    critRate: monster.stats.critRate,
+    defense: state.hero.stats.defense,
+    cardElement: state.monster.element,
+    monsterElement: state.monster.element,
+    critRate: state.monster.stats.critRate,
     isShield: false,
-    isCritBoost: skillEffects.isCritBoost,
+    isCritBoost: Boolean(critBoost),
     isImmuneToElement: null,
     enrageMultiplier,
     isMonsterAttacking: true,
   })
 
-  const newHeroHp = Math.max(hero.currentHp - damageResult.finalDamage, 0)
-  const critText = damageResult.isCrit ? ' 🔥暴击！' : ''
+  const heroHp = Math.max(state.hero.currentHp - damageResult.finalDamage, 0)
+  const critText = damageResult.isCrit ? ' 暴击！' : ''
   const enrageText = enrageMultiplier > 1 ? ` (狂暴×${enrageMultiplier.toFixed(1)})` : ''
 
-  newLogs.push({
-    turn,
-    message: `怪兽${typeLabel}攻击: ${attack} × 1.0 - ${hero.stats.defense} = ${damageResult.finalDamage}伤害${critText}${enrageText}`,
-    isHeroAction: false,
+  events.push(createEvent({
+    type: 'damage',
+    turn: state.currentTurn,
+    actor: 'monster',
+    target: 'hero',
+    amount: damageResult.finalDamage,
+    damageType: isPhysical ? 'physical' : 'magic',
+    element: state.monster.element,
+    elementMultiplier: damageResult.elementMultiplier,
+    isCrit: damageResult.isCrit,
+    isShield: false,
+    isImmune: false,
+    enrageMultiplier,
+    message: `怪兽${typeLabel}攻击: ${attack} × 1.0 - ${state.hero.stats.defense} = ${damageResult.finalDamage}伤害${critText}${enrageText}`,
+  }))
+
+  let nextMonster = state.monster
+  if (lifesteal) {
+    const healAmount = Math.floor(damageResult.finalDamage * 0.3)
+    const healedHp = Math.min(state.monster.currentHp + healAmount, state.monster.stats.maxHp)
+    events.push(createEvent({
+      type: 'heal',
+      turn: state.currentTurn,
+      actor: 'monster',
+      target: 'monster',
+      amount: healedHp - state.monster.currentHp,
+      beforeHp: state.monster.currentHp,
+      afterHp: healedHp,
+      source: 'lifesteal',
+      message: `怪兽吸血恢复 ${healedHp - state.monster.currentHp} HP`,
+    }))
+    nextMonster = { ...state.monster, currentHp: healedHp }
+  }
+
+  const newIsStunned = Boolean(stun)
+  let nextHero = { ...state.hero, currentHp: heroHp, isStunned: newIsStunned }
+  if (newIsStunned) {
+    events.push(createEvent({
+      type: 'status',
+      turn: state.currentTurn,
+      actor: 'monster',
+      target: 'hero',
+      status: 'stun',
+      action: 'applied',
+      message: '怪兽使英雄陷入眩晕',
+    }))
+  }
+
+  let nextState = appendEvents({
+    ...state,
+    hero: nextHero,
+    monster: nextMonster,
+    statusEffects: activeStatusEffects(nextHero),
+  }, events)
+
+  if (heroHp <= 0) {
+    nextState = withResult(nextState, { winner: 'monster', reason: 'defeat' }, [])
+  }
+
+  return { state: nextState, damageResult }
+}
+
+function finishTurn(state: BattleState): BattleState {
+  const nextTurn = state.currentTurn + 1
+
+  if (nextTurn > state.maxTurns) {
+    return withResult({
+      ...state,
+      phase: 'resolving',
+      isPlayerTurn: false,
+    }, { winner: 'monster', reason: 'turnLimit' }, [])
+  }
+
+  const turnEvent = createEvent({
+    type: 'turnAdvanced',
+    turn: state.currentTurn,
+    nextTurn,
+    message: `进入第 ${nextTurn} 回合`,
   })
 
-  const newIsStunned = skillEffects.willStun
+  const nextState = appendEvents({
+    ...state,
+    phase: 'playerAction',
+    currentTurn: nextTurn,
+    cards: generateCards(state.level),
+    isPlayerTurn: true,
+    isEnraged: state.monster.isBoss && nextTurn > ENRAGE_START_TURN,
+    gameOver: false,
+    winner: null,
+    result: null,
+  }, [turnEvent])
 
-  if (newHeroHp <= 0) {
-    return {
-      newState: {
-        ...state,
-        hero: { ...hero, currentHp: 0, isStunned: newIsStunned },
-        logs: [...state.logs, ...newLogs],
-        gameOver: true,
-        winner: 'monster',
-      },
-      damageResult,
-    }
-  }
-
-  return {
-    newState: {
-      ...state,
-      hero: { ...hero, currentHp: newHeroHp, isStunned: newIsStunned },
-      logs: [...state.logs, ...newLogs],
-      currentTurn: turn + 1,
-      cards: generateCards(1),
-      isPlayerTurn: true,
-      isEnraged: monster.isBoss && turn + 1 > ENRAGE_START_TURN,
-      gameOver: turn + 1 > MAX_TURNS,
-      winner: turn + 1 > MAX_TURNS ? 'monster' : null,
-    },
-    damageResult,
-  }
+  return nextState
 }
 
 export function applyVictoryGrowth(hero: Hero): Hero {

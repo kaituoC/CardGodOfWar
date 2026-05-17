@@ -3,43 +3,32 @@
     <span class="info">关卡: <strong>{{ level }}</strong></span>
     <span class="info">回合: <strong>{{ currentTurn }}/{{ maxTurns }}</strong></span>
     <span v-if="isBoss" class="boss-badge">
-      {{ isEnraged ? '⚠️ Boss狂暴！' : 'Boss战' }}
-    </span>
-    <span v-if="monsterElement" class="info">
-      怪兽元素: <span :class="`element-${monsterElement}`">{{ elementLabel }}</span>
-      <span class="advantage-hint">({{ advantageHint }}克之)</span>
+      {{ isEnraged ? '⚠ Boss狂暴！' : 'Boss战' }}
     </span>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { Element } from '../game/types'
-
-const props = defineProps<{
+defineProps<{
   level: number
   currentTurn: number
   maxTurns: number
   isBoss?: boolean
   isEnraged?: boolean
-  monsterElement?: Element
 }>()
-
-const elementLabels: Record<Element, string> = { fire: '火', thunder: '雷', water: '水' }
-const advantageMap: Record<Element, Element> = { fire: 'water', thunder: 'fire', water: 'thunder' }
-
-const elementLabel = props.monsterElement ? elementLabels[props.monsterElement] : ''
-const advantageHint = props.monsterElement ? elementLabels[advantageMap[props.monsterElement]] : ''
 </script>
 
 <style lang="scss" scoped>
 .status-bar {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 8px 16px;
-  background: #16213e;
-  border-radius: 6px;
-  font-size: 14px;
+  justify-content: center;
+  gap: 32px;
+  padding: 12px 20px;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  border-radius: 8px;
+  font-size: 17px;
+  border: 1px solid rgba(233, 69, 96, 0.2);
 
   &.enraged {
     background: #3d0c0c;
@@ -47,8 +36,13 @@ const advantageHint = props.monsterElement ? elementLabels[advantageMap[props.mo
   }
 }
 
-.info { color: #95a5a6; }
-.info strong { color: #ecf0f1; }
+.info { color: #bdc3c7; font-size: 16px; }
+.info strong {
+  color: #e94560;
+  font-size: 20px;
+  font-weight: 700;
+  text-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+}
 
 .boss-badge {
   background: #e94560;
@@ -56,15 +50,6 @@ const advantageHint = props.monsterElement ? elementLabels[advantageMap[props.mo
   border-radius: 4px;
   font-size: 12px;
   font-weight: bold;
-}
-
-.element-fire { color: #e74c3c; }
-.element-thunder { color: #f39c12; }
-.element-water { color: #3498db; }
-
-.advantage-hint {
-  font-size: 12px;
-  color: #95a5a6;
 }
 
 @keyframes pulse-red {

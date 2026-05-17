@@ -1,5 +1,6 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
-import { join, homedir } from 'path'
+import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import { join } from 'path'
+import { homedir } from 'os'
 import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs'
 
 const SAVE_DIR = join(homedir(), '.cardgodofwar', 'saves')
@@ -15,11 +16,32 @@ function getSavePath(slot: number | 'auto'): string {
   return join(SAVE_DIR, name)
 }
 
+function getAppIconPath(): string | undefined {
+  const iconPath = join(process.cwd(), 'assets', 'icon.png')
+  return existsSync(iconPath) ? iconPath : undefined
+}
+
+function applyDockIcon() {
+  const iconPath = getAppIconPath()
+  if (process.platform !== 'darwin' || !iconPath) return
+
+  const icon = nativeImage.createFromPath(iconPath)
+  if (!icon.isEmpty()) {
+    app.dock.setIcon(icon)
+  }
+}
+
 function createWindow() {
+  const iconPath = getAppIconPath()
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
-    webPreferences: { preload: join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true },
+    show: false,
+    icon: iconPath,
+    webPreferences: { preload: join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: false },
+  })
+  win.once('ready-to-show', () => {
+    win.show()
   })
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(process.env.VITE_DEV_SERVER_URL)
@@ -30,6 +52,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   ensureSaveDir()
+  applyDockIcon()
 
   ipcMain.handle('save-game', (_event, slot: number | 'auto', data: unknown) => {
     try {

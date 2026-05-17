@@ -7,6 +7,23 @@ export type CardType = 'physical' | 'magic' | 'heal' | 'statBoost'
 // 卡牌星级
 export type CardStar = 1 | 2 | 3
 
+// 战斗阶段
+export type BattlePhase = 'playerAction' | 'monsterAction' | 'resolving' | 'gameOver'
+
+// 战斗结果
+export interface BattleResult {
+  winner: 'hero' | 'monster'
+  reason: 'defeat' | 'turnLimit'
+}
+
+export type BattleActor = 'hero' | 'monster'
+export type BattleStatusType = 'stun'
+
+export interface BattleStatusEffect {
+  target: BattleActor
+  type: BattleStatusType
+}
+
 // 英雄/怪兽属性
 export interface Stats {
   physicalAttack: number
@@ -65,15 +82,105 @@ export interface BattleLogEntry {
   turn: number
   message: string
   isHeroAction: boolean
+  eventId?: string
 }
+
+interface BattleEventBase {
+  id: string
+  turn: number
+  type: string
+  message: string
+  actor?: BattleActor
+  target?: BattleActor
+}
+
+export interface DamageEvent extends BattleEventBase {
+  type: 'damage'
+  actor: BattleActor
+  target: BattleActor
+  amount: number
+  damageType: 'physical' | 'magic'
+  element?: Element
+  elementMultiplier: number
+  isCrit: boolean
+  isShield: boolean
+  isImmune: boolean
+  enrageMultiplier: number
+}
+
+export interface HealEvent extends BattleEventBase {
+  type: 'heal'
+  actor: BattleActor
+  target: BattleActor
+  amount: number
+  beforeHp: number
+  afterHp: number
+  source: 'card' | 'lifesteal'
+}
+
+export interface StatBoostEvent extends BattleEventBase {
+  type: 'statBoost'
+  actor: 'hero'
+  target: 'hero'
+  stat: keyof Stats
+  amount: number
+  beforeValue: number
+  afterValue: number
+}
+
+export interface SkillTriggeredEvent extends BattleEventBase {
+  type: 'skillTriggered'
+  actor: 'monster'
+  skill: MonsterSkillType
+  immuneElement?: Element
+}
+
+export interface StatusEvent extends BattleEventBase {
+  type: 'status'
+  actor: BattleActor
+  target: BattleActor
+  status: BattleStatusType
+  action: 'applied' | 'consumed' | 'rejected'
+}
+
+export interface TurnSkippedEvent extends BattleEventBase {
+  type: 'turnSkipped'
+  actor: 'hero'
+}
+
+export interface TurnAdvancedEvent extends BattleEventBase {
+  type: 'turnAdvanced'
+  nextTurn: number
+}
+
+export interface BattleEndedEvent extends BattleEventBase {
+  type: 'battleEnded'
+  winner: 'hero' | 'monster'
+  reason: 'defeat' | 'turnLimit'
+}
+
+export type BattleEvent =
+  | DamageEvent
+  | HealEvent
+  | StatBoostEvent
+  | SkillTriggeredEvent
+  | StatusEvent
+  | TurnSkippedEvent
+  | TurnAdvancedEvent
+  | BattleEndedEvent
 
 // 战斗状态
 export interface BattleState {
+  level: number
   hero: Hero
   monster: Monster
   currentTurn: number
   maxTurns: number
   cards: Card[] // 当前回合的3张卡牌
+  phase: BattlePhase
+  result: BattleResult | null
+  statusEffects: BattleStatusEffect[]
+  events: BattleEvent[]
   logs: BattleLogEntry[]
   isPlayerTurn: boolean
   isEnraged: boolean // Boss狂暴

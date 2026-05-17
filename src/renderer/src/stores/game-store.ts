@@ -1,7 +1,46 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Hero, BattleState, Card, SaveData } from '@/game/types'
-import { createInitialHero, createBattle, playCard, applyVictoryGrowth, resetToInitialHero } from '@/game/game-engine'
+import type { Hero, BattleState, Card, SaveData, BattleLogEntry } from '@/game/types'
+import { createInitialHero, createBattle, playCard, applyVictoryGrowth, resetToInitialHero, skipTurn } from '@/game/game-engine'
+
+function clonePlain<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value))
+}
+
+function normalizeBattleState(battle: BattleState, level: number): BattleState {
+  const result = battle.result ?? (battle.winner
+    ? { winner: battle.winner, reason: 'defeat' as const }
+    : null)
+  const gameOver = battle.gameOver ?? Boolean(result)
+  const phase = battle.phase ?? (gameOver ? 'gameOver' : 'playerAction')
+  const hero = {
+    ...battle.hero,
+    stats: { ...battle.hero.stats },
+    isStunned: Boolean(battle.hero.isStunned),
+  }
+  const monster = {
+    ...battle.monster,
+    stats: { ...battle.monster.stats },
+    skills: battle.monster.skills.map(skill => ({ ...skill })),
+  }
+  const logs: BattleLogEntry[] = battle.logs ?? []
+
+  return {
+    ...battle,
+    level: battle.level ?? level,
+    hero,
+    monster,
+    cards: battle.cards ?? [],
+    logs,
+    phase,
+    result,
+    statusEffects: battle.statusEffects ?? (hero.isStunned ? [{ target: 'hero', type: 'stun' }] : []),
+    events: battle.events ?? [],
+    isPlayerTurn: phase === 'playerAction' && !gameOver,
+    gameOver,
+    winner: result?.winner ?? battle.winner ?? null,
+  }
+}
 
 export const useGameStore = defineStore('game', () => {
   const level = ref(1)
@@ -32,6 +71,12 @@ export const useGameStore = defineStore('game', () => {
     autoSave()
   }
 
+  function skipTurnAction() {
+    if (!currentBattle.value || currentBattle.value.gameOver) return
+    currentBattle.value = skipTurn(currentBattle.value)
+    autoSave()
+  }
+
   function nextLevel() {
     hero.value = applyVictoryGrowth(currentBattle.value!.hero)
     level.value++
@@ -53,10 +98,12 @@ export const useGameStore = defineStore('game', () => {
 
   async function autoSave() {
     if (!currentBattle.value) return
+    const cleanHero = clonePlain(hero.value)
+    const cleanBattle = clonePlain(currentBattle.value)
     const data: SaveData = {
       level: level.value,
-      hero: { ...hero.value },
-      battleState: currentBattle.value,
+      hero: cleanHero,
+      battleState: cleanBattle,
       timestamp: Date.now(),
     }
     try {
@@ -68,14 +115,18 @@ export const useGameStore = defineStore('game', () => {
 
   async function saveManual(slot: number): Promise<boolean> {
     if (!currentBattle.value) return false
+    // 使用 JSON 序列化/反序列化剥离 Vue 响应式代理，避免 IPC 结构化克隆失败
+    const cleanHero = clonePlain(hero.value)
+    const cleanBattle = clonePlain(currentBattle.value)
     const data: SaveData = {
       level: level.value,
-      hero: { ...hero.value },
-      battleState: currentBattle.value,
+      hero: cleanHero,
+      battleState: cleanBattle,
       timestamp: Date.now(),
     }
     try {
-      return await window.electronAPI.saveGame(slot, data)
+      const result = await window.electronAPI.saveGame(slot, data)
+      return result
     } catch {
       return false
     }
@@ -93,9 +144,9 @@ export const useGameStore = defineStore('game', () => {
 
   function restoreSave(data: SaveData) {
     level.value = data.level
-    hero.value = data.hero
+    hero.value = clonePlain(data.hero)
     if (data.battleState) {
-      currentBattle.value = data.battleState
+      currentBattle.value = normalizeBattleState(clonePlain(data.battleState), data.level)
     } else {
       startBattle()
       return
@@ -134,6 +185,7 @@ export const useGameStore = defineStore('game', () => {
     manualSaves,
     startNewGame,
     playCardAction,
+    skipTurnAction,
     nextLevel,
     retryLevel,
     backToStart,

@@ -141,7 +141,8 @@ describe('calculateDamage', () => {
       enrageMultiplier: 1.0,
       isMonsterAttacking: false,
     })
-    expect(result.finalDamage).toBe(1)
+    expect(result.finalDamage).toBe(10)
+    expect(result.elementMultiplier).toBe(1.0)
   })
 
   it('applies enrage multiplier for monster attacks', () => {

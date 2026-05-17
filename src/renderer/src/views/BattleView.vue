@@ -6,7 +6,6 @@
       :max-turns="20"
       :is-boss="battleState.monster.isBoss"
       :is-enraged="battleState.isEnraged"
-      :monster-element="battleState.monster.element"
     />
 
     <div class="status-row">
@@ -16,14 +15,17 @@
 
     <div class="battle-content">
       <div class="left-panel">
-        <CardHand
-          :cards="battleState.cards"
-          :is-stunned="battleState.hero.isStunned"
-          @play-card="gameStore.playCardAction"
-        />
-        <div class="battle-actions">
-          <button class="btn secondary small" @click="showSaveDialog = true">保存</button>
-          <button class="btn secondary small" @click="confirmBackToMenu">回主菜单</button>
+        <div class="cards-wrapper">
+          <CardHand
+            :cards="battleState.cards"
+            :is-stunned="battleState.hero.isStunned"
+            @play-card="gameStore.playCardAction"
+            @skip-turn="gameStore.skipTurnAction"
+          />
+        </div>
+        <div class="battle-actions-bar">
+          <button class="btn secondary" @click="showSaveDialog = true">保存</button>
+          <button class="btn secondary" @click="confirmBackToMenu">回主菜单</button>
         </div>
       </div>
       <BattleLog :logs="battleState.logs" />
@@ -57,8 +59,10 @@ import CardHand from '../components/CardHand.vue'
 import BattleLog from '../components/BattleLog.vue'
 import SaveDialog from '../components/SaveDialog.vue'
 import ResultDialog from '../components/ResultDialog.vue'
-import DamageNumbers, { pushDamageNumber } from '../components/DamageNumbers.vue'
+import DamageNumbers from '../components/DamageNumbers.vue'
+import { pushDamageNumber, type FloatingNumber } from '../game/floating-numbers'
 import { useGameStore } from '../stores/game-store'
+import type { BattleEvent } from '../game/types'
 
 const gameStore = useGameStore()
 const showSaveDialog = ref(false)
@@ -66,12 +70,13 @@ const showSaveDialog = ref(false)
 const battleState = computed(() => gameStore.currentBattle!)
 
 // Damage number overlays
-const damageNumbers = ref<Array<{ id: number; type: string; value: string; text?: string; x: number; y: number }>>([])
+const damageNumbers = ref<FloatingNumber[]>([])
 
 // Flash effects
 const heroFlash = ref(false)
 const monsterFlash = ref(false)
 const isEnragedFlash = ref(false)
+let lastEventCount = battleState.value?.events?.length ?? 0
 
 function triggerFlash(target: 'hero' | 'monster' | 'enraged') {
   if (target === 'hero') {
@@ -86,44 +91,50 @@ function triggerFlash(target: 'hero' | 'monster' | 'enraged') {
   }
 }
 
-// Watch for new log entries to spawn floating numbers
-let lastLogCount = 0
-watch(() => battleState.value?.logs?.length, (newCount) => {
-  if (!battleState.value || !newCount) return
-  const newLogs = battleState.value.logs.slice(lastLogCount)
-  lastLogCount = newCount
+// Watch structured battle events to spawn floating numbers and flashes.
+watch(() => battleState.value?.events?.length, (newCount) => {
+  if (!battleState.value) return
+  if ((newCount ?? 0) < lastEventCount) lastEventCount = newCount ?? 0
+  if (!newCount) return
+  const newEvents = battleState.value.events.slice(lastEventCount)
+  lastEventCount = newCount
 
-  for (const log of newLogs) {
-    const msg = log.message
-    // Parse damage numbers from log messages
-    const damageMatch = msg.match(/(\d+)伤害/)
-    const healMatch = msg.match(/恢复\s*(\d+)\s*HP/)
-    const critMatch = msg.includes('暴击')
-    const elementMatch = msg.match(/(火|雷|水)(克制|被克)/)
-
-    if (log.isHeroAction) {
-      if (healMatch) {
-        pushDamageNumber('heal', '+' + healMatch[1], '', 300, 250)
-      } else if (damageMatch) {
-        const dmgX = 550
-        pushDamageNumber(critMatch ? 'crit' : 'damage', damageMatch[1], critMatch ? '暴击！' : '', dmgX, 200)
-        if (elementMatch) {
-          pushDamageNumber('element', elementMatch[1], '', dmgX - 40, 170)
-        }
-        triggerFlash('monster')
-      }
-    } else {
-      if (damageMatch) {
-        pushDamageNumber('damage', damageMatch[1], critMatch ? '暴击！' : '', 200, 200)
-        triggerFlash('hero')
-      }
-      // Boss enrage log
-      if (msg.includes('狂暴')) {
-        triggerFlash('enraged')
-      }
-    }
+  for (const event of newEvents) {
+    handleBattleEvent(event)
   }
 })
+
+function handleBattleEvent(event: BattleEvent) {
+  if (event.type === 'damage') {
+    const targetX = event.target === 'monster' ? 550 : 200
+    const targetY = 200
+    pushDamageNumber(
+      damageNumbers,
+      event.isCrit ? 'crit' : 'damage',
+      String(event.amount),
+      event.isCrit ? '暴击！' : '',
+      targetX,
+      targetY,
+    )
+    if (event.element && (event.elementMultiplier !== 1 || event.isImmune)) {
+      const label = event.isImmune ? '免疫' : event.elementMultiplier > 1 ? '克制' : '被克'
+      pushDamageNumber(damageNumbers, 'element', label, '', targetX - 40, 170)
+    }
+    triggerFlash(event.target)
+    if (event.enrageMultiplier > 1) triggerFlash('enraged')
+  }
+
+  if (event.type === 'heal' && event.amount > 0) {
+    pushDamageNumber(
+      damageNumbers,
+      'heal',
+      '+' + event.amount,
+      '',
+      event.target === 'hero' ? 300 : 550,
+      250,
+    )
+  }
+}
 
 async function onSave(slot: number) {
   const success = await gameStore.saveManual(slot)
@@ -167,17 +178,28 @@ function confirmBackToMenu() {
   flex: 0 0 55%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  position: relative;
+  align-self: stretch;
 }
 
-.battle-actions {
+.cards-wrapper {
+  flex: 1;
   display: flex;
-  gap: 8px;
+  align-items: center;
+  padding-bottom: 48px;
 }
 
-.small {
-  padding: 6px 12px;
-  font-size: 13px;
+.battle-actions-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(22, 33, 62, 0.7);
+  border-radius: 8px 8px 0 0;
 }
 
 .damage-flash {

@@ -1,5 +1,9 @@
 <template>
-  <div class="card" :class="`star-${card.star}`" @click="$emit('play', card)">
+  <div
+    class="card"
+    :class="[`star-${card.star}`, { disabled }]"
+    @click="!disabled && $emit('play', card)"
+  >
     <div class="card-stars">{{ '⭐'.repeat(card.star) }}</div>
     <div class="card-type">
       <span class="type-icon">{{ typeIcon }}</span>
@@ -14,7 +18,7 @@
     <div v-if="card.type === 'statBoost' && card.statBoost" class="card-stat-boost">
       {{ statLabel }} +{{ card.statBoost.value }}
     </div>
-    <div class="card-action">使用</div>
+    <div class="card-action">{{ disabled ? '禁用' : '使用' }}</div>
   </div>
 </template>
 
@@ -22,7 +26,7 @@
 import { computed } from 'vue'
 import type { Card } from '../game/types'
 
-const props = defineProps<{ card: Card }>()
+const props = defineProps<{ card: Card; disabled?: boolean }>()
 defineEmits<{ play: [card: Card] }>()
 
 const typeIcons: Record<string, string> = { physical: '⚔️', magic: '✨', heal: '💚', statBoost: '⬆️' }
@@ -47,11 +51,22 @@ const statLabel = computed(() => props.card.statBoost ? statLabels[props.card.st
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
 
   &:hover {
     transform: translateY(-4px);
     box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  }
+
+  &.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
+
+    &:hover {
+      transform: none;
+      box-shadow: none;
+    }
   }
 
   &.star-1 { background: #2a2a2a; border: 2px solid #a0a0a0; }
