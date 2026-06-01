@@ -35,7 +35,9 @@ jobs:
         run: npm ci
 
       - name: Build distributables
-        run: npm run ${{ matrix.script }}
+        # --publish never：禁用 electron-builder 检测到 git tag 时的隐式 publish
+        # （否则会因缺少 GH_TOKEN 报错使整个 job 失败）。发布统一由后面的 release job 负责。
+        run: npm run ${{ matrix.script }} -- --publish never
         env:
           # 未配置 macOS 签名证书：关闭自动签名探测，避免 CI 因找不到证书而失败。
           CSC_IDENTITY_AUTO_DISCOVERY: false
