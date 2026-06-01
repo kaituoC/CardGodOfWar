@@ -1,8 +1,9 @@
 <template>
   <div class="monster-status">
     <div class="name monster-title">
-      {{ monster.isBoss ? 'Boss' : '怪兽' }}
+      {{ monster.archetype?.name ?? (monster.isBoss ? 'Boss' : '怪兽') }}
       <span :class="`element-${monster.element}`">{{ elementLabel }}</span>
+      <span v-if="monster.isBoss && monster.archetype?.id !== 'stoneGeneral'" class="boss-tag">Boss</span>
     </div>
     <div class="hp-bar">
       <div class="hp-fill" :class="{ boss: monster.isBoss }" :style="{ width: hpPercent + '%' }"></div>
@@ -34,13 +35,23 @@
     <div class="skill-tags">
       <span v-for="(label, i) in monsterSkills" :key="i" class="skill-tag">{{ label }}</span>
     </div>
+    <!-- Monster statuses -->
+    <div class="status-badges">
+      <span v-if="breakDefenseStatus" class="badge break-defense">破防({{ breakDefenseStatus.reductionPercent }}%/{{ breakDefenseStatus.remainingUses }}次)</span>
+      <span v-if="weakStatus" class="badge weak">虚弱({{ weakStatus.multiplier }}×)</span>
+      <span v-if="hasMonsterShield" class="badge shield">护盾</span>
+    </div>
+    <!-- Stone General shield pressure -->
+    <div v-if="monster.archetype?.id === 'stoneGeneral'" class="shield-pressure">
+      <span>盾压: 回合 {{ nextShieldTurn }} 触发</span>
+    </div>
     <!-- Intent panel -->
     <div v-if="showIntent" class="intent-panel">
       <div class="intent-row">
         <span class="intent-label">怪兽行动:</span>
         <span class="intent-value">{{ intentAttackLabel }}</span>
-        <span class="intent-damage">预计 {{ intent.estimatedDamage }}</span>
-        <span v-if="intent.critRate > 0" class="intent-crit">
+        <span class="intent-damage">预计 {{ intent?.estimatedDamage }}</span>
+        <span v-if="intent && intent.critRate > 0" class="intent-crit">
           | {{ critLabel }}{{ intent.critRate }}%→{{ intent.critDamage }}
         </span>
       </div>
@@ -62,25 +73,22 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { BattleState } from '../game/types'
+import type { BattleState, Element } from '../game/types'
+import { ELEMENT_LABELS, SKILL_LABELS } from '../game/constants'
 
 const props = defineProps<{ monster: BattleState['monster']; battleState: BattleState }>()
 const hpPercent = computed(() => Math.round(props.monster.currentHp / props.monster.stats.maxHp * 100))
 
-const elementLabels: Record<string, string> = { fire: '火', thunder: '雷', water: '水' }
-const skillLabelsMap: Record<string, string> = {
-  shield: '护盾', lifesteal: '吸血', critBoost: '暴击强化',
-  elementImmune: '元素免疫', stun: '眩晕',
-}
-const advantageMap: Record<string, string> = { fire: 'water', thunder: 'fire', water: 'thunder' }
+// 谁克制当前怪兽元素（与 ELEMENT_ADVANTAGE 的"X 克 Y"方向相反）
+const advantageMap: Record<Element, Element> = { fire: 'water', thunder: 'fire', water: 'thunder' }
 
-const elementLabel = computed(() => elementLabels[props.monster.element])
+const elementLabel = computed(() => ELEMENT_LABELS[props.monster.element])
 const advantageElement = computed(() => advantageMap[props.monster.element])
-const advantageLabel = computed(() => elementLabels[advantageElement.value])
+const advantageLabel = computed(() => ELEMENT_LABELS[advantageElement.value])
 
 const monsterSkills = computed(() =>
   props.monster.skills.map(s =>
-    skillLabelsMap[s.type] + (s.immuneElement ? `(${elementLabels[s.immuneElement]})` : '')
+    SKILL_LABELS[s.type] + (s.immuneElement ? `(${ELEMENT_LABELS[s.immuneElement]})` : '')
   )
 )
 
@@ -115,6 +123,29 @@ const enrageTurnsLeft = computed(() => {
 const intentEnrageMultiplier = computed(() => {
   if (!intent.value) return 1.0
   return intent.value.enrageMultiplier
+})
+
+// Monster statuses from battle state
+const breakDefenseStatus = computed(() =>
+  props.battleState.statusEffects?.find(s => s.type === 'breakDefense' && s.target === 'monster') as
+    | { type: 'breakDefense'; target: 'monster'; reductionPercent: number; remainingUses: number }
+    | undefined
+)
+const weakStatus = computed(() =>
+  props.battleState.statusEffects?.find(s => s.type === 'weak' && s.target === 'monster') as
+    | { type: 'weak'; target: 'monster'; multiplier: number; remainingUses: number }
+    | undefined
+)
+const hasMonsterShield = computed(() =>
+  props.battleState.statusEffects?.some(s => s.type === 'shield' && s.target === 'monster') ?? false
+)
+
+// Stone General shield pressure
+const nextShieldTurn = computed(() => {
+  const currentTurn = props.battleState.currentTurn
+  const cadence = props.monster.archetype?.shieldPressureCadence ?? 3
+  const nextTurn = currentTurn + (cadence - ((currentTurn - 1) % cadence))
+  return nextTurn
 })
 </script>
 
@@ -293,5 +324,50 @@ const intentEnrageMultiplier = computed(() => {
 .pressure-active {
   color: #e74c3c;
   font-weight: 700;
+}
+
+.boss-tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: rgba(142, 68, 173, 0.3);
+  color: #bb8fce;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.status-badges {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+
+  &.break-defense {
+    background: rgba(231, 76, 60, 0.3);
+    color: #e74c3c;
+  }
+
+  &.weak {
+    background: rgba(142, 68, 173, 0.3);
+    color: #bb8fce;
+  }
+
+  &.shield {
+    background: rgba(52, 152, 219, 0.3);
+    color: #5dade2;
+  }
+}
+
+.shield-pressure {
+  margin-top: 4px;
+  font-size: 11px;
+  text-align: center;
+  color: #5dade2;
+  font-weight: 600;
 }
 </style>

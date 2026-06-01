@@ -51,11 +51,11 @@
 
 - [x] 7.1 Run `npm run test` and require all tests to pass.
 - [x] 7.2 Run `npm run build` and require type checking plus production build to pass.
-- [ ] 7.3 Manually smoke test a normal desktop battle: card colors, size, estimates, action bar, and log readability.
-- [ ] 7.4 Manually smoke test a narrow window: hand wrapping/adaptation, no horizontal overflow, no action overlap.
-- [ ] 7.5 Manually smoke test stunned state: blocked attack cards show `眩晕中`, non-attack cards remain usable, skip flow still works.
-- [ ] 7.6 Manually smoke test Boss states: pre-enrage countdown, enraged multiplier, and damage preview consistency.
-- [ ] 7.7 Manually smoke test save/load or restored battle state so missing/unavailable intent does not crash card rendering.
+- [x] 7.3 Manually smoke test a normal desktop battle: card colors, size, estimates, action bar, and log readability.
+- [x] 7.4 Manually smoke test a narrow window: hand wrapping/adaptation, no horizontal overflow, no action overlap.
+- [x] 7.5 Manually smoke test stunned state: blocked attack cards show `眩晕中`, non-attack cards remain usable, skip flow still works.
+- [x] 7.6 Manually smoke test Boss states: pre-enrage countdown, enraged multiplier, and damage preview consistency.
+- [x] 7.7 Manually smoke test save/load or restored battle state so missing/unavailable intent does not crash card rendering.
 
 ## 8. Final Review Checklist
 

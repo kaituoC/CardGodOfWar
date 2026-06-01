@@ -28,7 +28,7 @@ const props = defineProps<{ cards: Card[]; isStunned?: boolean; battleState: Bat
 defineEmits<{ 'play-card': [card: Card]; 'skip-turn': [] }>()
 
 const isCardDisabled = (card: Card) =>
-  props.isStunned && (card.type === 'physical' || card.type === 'magic')
+  props.isStunned && (card.type === 'physical' || card.type === 'magic' || card.type === 'tactical')
 
 const hasAnyUsableCard = computed(() =>
   props.cards.some(c => !isCardDisabled(c))

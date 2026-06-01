@@ -9,7 +9,7 @@
     />
 
     <div class="status-row">
-      <HeroStatus :hero="battleState.hero" :class="{ 'damage-flash': heroFlash }" />
+      <HeroStatus :hero="battleState.hero" :status-effects="battleState.statusEffects" :class="{ 'damage-flash': heroFlash }" />
       <MonsterStatus :monster="battleState.monster" :battle-state="battleState" :class="{ 'damage-flash': monsterFlash }" />
     </div>
 
@@ -37,11 +37,17 @@
     />
 
     <ResultDialog
-      v-if="battleState.gameOver"
+      v-if="battleState.gameOver && !gameStore.isRewardSelection"
       :winner="battleState.winner"
       @retry="gameStore.retryLevel()"
       @next-level="gameStore.nextLevel()"
       @back-to-start="gameStore.backToStart()"
+    />
+
+    <RewardDialog
+      v-if="gameStore.isRewardSelection"
+      :rewards="battleState.pendingRewards?.rewards ?? []"
+      @select="gameStore.selectReward"
     />
 
     <DamageNumbers v-model="damageNumbers" />
@@ -57,6 +63,7 @@ import MonsterStatus from '../components/MonsterStatus.vue'
 import CardHand from '../components/CardHand.vue'
 import BattleLog from '../components/BattleLog.vue'
 import SaveDialog from '../components/SaveDialog.vue'
+import RewardDialog from '../components/RewardDialog.vue'
 import ResultDialog from '../components/ResultDialog.vue'
 import DamageNumbers from '../components/DamageNumbers.vue'
 import { pushDamageNumber, type FloatingNumber } from '../game/floating-numbers'

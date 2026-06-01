@@ -27,7 +27,7 @@ defineEmits<{
 }>()
 
 const resultMessage = computed(() =>
-  props.winner === 'hero' ? '英雄成功通关！获得属性提升' : '英雄被击败了...'
+  props.winner === 'hero' ? '英雄成功通关！' : '英雄被击败了...'
 )
 </script>
 

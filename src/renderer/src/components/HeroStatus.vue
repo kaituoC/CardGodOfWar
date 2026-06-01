@@ -28,15 +28,51 @@
       </div>
     </div>
     <div v-if="hero.isStunned" class="stun-badge">眩晕</div>
+    <div class="status-badges">
+      <span v-if="hasShield" class="badge shield">护盾 {{ shieldAmount }}</span>
+      <span v-if="hasWeak" class="badge weak">虚弱</span>
+    </div>
+    <div v-if="hero.relics.length > 0" class="relics">
+      <span v-for="relicId in hero.relics" :key="relicId" class="relic-tag" :title="relicLabel(relicId)">
+        {{ relicIcon(relicId) }}
+      </span>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { Hero } from '../game/types'
+import type { Hero, ExpandedStatus } from '../game/types'
+import { RELIC_REGISTRY } from '../game/constants'
 
-const props = defineProps<{ hero: Hero }>()
+const props = defineProps<{ hero: Hero; statusEffects?: ExpandedStatus[] }>()
 const hpPercent = computed(() => Math.round(props.hero.currentHp / props.hero.stats.maxHp * 100))
+
+const hasShield = computed(() => props.statusEffects?.some(s => s.type === 'shield') ?? false)
+const shieldAmount = computed(() => {
+  const shield = props.statusEffects?.find(s => s.type === 'shield')
+  return shield?.type === 'shield' ? shield.amount : 0
+})
+const hasWeak = computed(() => props.statusEffects?.some(s => s.type === 'weak' && s.target === 'hero') ?? false)
+
+function relicLabel(id: string): string {
+  const relic = RELIC_REGISTRY.find(r => r.id === id)
+  return relic?.shortDescription ?? id
+}
+
+function relicIcon(id: string): string {
+  const icons: Record<string, string> = {
+    'flame-emblem': '🔥',
+    'thunder-core': '⚡',
+    'water-spirit-bottle': '💧',
+    'armor-breaker-blade': '🗡️',
+    'blood-rage-sigil': '🩸',
+    'ironwall-crest': '🛡️',
+    'sharp-charm': '💎',
+    'regrowth-seed': '🌱',
+  }
+  return icons[id] || '🏅'
+}
 </script>
 
 <style lang="scss" scoped>
@@ -123,6 +159,42 @@ const hpPercent = computed(() => Math.round(props.hero.currentHp / props.hero.st
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;
+}
+
+.status-badges {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+
+  &.shield {
+    background: rgba(52, 152, 219, 0.3);
+    color: #5dade2;
+  }
+
+  &.weak {
+    background: rgba(142, 68, 173, 0.3);
+    color: #bb8fce;
+  }
+}
+
+.relics {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.relic-tag {
+  font-size: 14px;
+  cursor: help;
 }
 </style>
 

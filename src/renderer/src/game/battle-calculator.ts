@@ -7,6 +7,11 @@ import {
   CRIT_BOOST_MULTIPLIER,
   MIN_DAMAGE,
 } from './constants'
+import {
+  resolveElementDamageBonus,
+  resolveCritMultiplierBonus,
+  resolveLowHpDamageMultiplier,
+} from './relic-effects'
 
 export interface DamageCalculationParams {
   attack: number
@@ -20,6 +25,12 @@ export interface DamageCalculationParams {
   isImmuneToElement: Element | null
   enrageMultiplier: number
   isMonsterAttacking: boolean
+  // Weak multiplier for monster attacks
+  weakMultiplier?: number
+  // 出伤方遗物上下文（仅英雄攻击时生效；解析委托给 relic-effects）
+  attackerRelics?: readonly string[]
+  attackerCurrentHp?: number
+  attackerMaxHp?: number
 }
 
 export interface DamageResult {
@@ -47,7 +58,8 @@ export function calculateDamage(params: DamageCalculationParams): DamageResult {
   const {
     attack, coefficient, defense, cardElement, monsterElement,
     critRate, isShield, isCritBoost, isImmuneToElement,
-    enrageMultiplier, isMonsterAttacking,
+    enrageMultiplier, isMonsterAttacking, weakMultiplier,
+    attackerRelics = [], attackerCurrentHp, attackerMaxHp,
   } = params
 
   // Step 1: Base damage
@@ -59,25 +71,47 @@ export function calculateDamage(params: DamageCalculationParams): DamageResult {
   // Step 3: Element multiplier
   let elementMultiplier: number
   if (isImmuneToElement === cardElement) {
-    elementMultiplier = 1.0 // 免疫时不受克制/被克影响
+    elementMultiplier = 1.0
   } else {
     elementMultiplier = getElementMultiplier(cardElement, monsterElement)
   }
+
+  // Element-damage relic (e.g. flame-emblem fire +25%)
+  elementMultiplier += resolveElementDamageBonus(attackerRelics, cardElement)
+
   const afterElement = afterDefense * elementMultiplier
 
   // Step 4: Crit check
   const roll = Math.random() * 100
   const crit = isCrit(critRate, roll)
-  const critMultiplier = isCritBoost ? CRIT_BOOST_MULTIPLIER : CRIT_MULTIPLIER
+  let critMultiplier = isCritBoost ? CRIT_BOOST_MULTIPLIER : CRIT_MULTIPLIER
+
+  // Crit-multiplier relic (e.g. sharp-charm +0.3)
+  if (crit) {
+    critMultiplier += resolveCritMultiplierBonus(attackerRelics)
+  }
+
   const afterCrit = crit ? afterElement * critMultiplier : afterElement
 
   // Step 5: Shield
   const afterShield = isShield ? afterCrit * 0.5 : afterCrit
 
+  // Step 5b: Apply weak multiplier (for monster attacks)
+  let afterWeak = afterShield
+  if (weakMultiplier !== undefined && isMonsterAttacking) {
+    afterWeak = afterShield * weakMultiplier
+  }
+
+  // Step 5c: Low-HP relic (e.g. blood-rage-sigil HP<30% → +20%), hero attacks only
+  let afterLowHp = afterWeak
+  if (!isMonsterAttacking) {
+    afterLowHp = afterWeak * resolveLowHpDamageMultiplier(attackerRelics, attackerCurrentHp, attackerMaxHp)
+  }
+
   // Step 6: Enrage (only for monster attacks)
   const finalBase = isMonsterAttacking
-    ? afterShield * enrageMultiplier
-    : afterShield
+    ? afterLowHp * enrageMultiplier
+    : afterLowHp
 
   // Step 7: Clamp to minimum
   const finalDamage = Math.max(Math.floor(finalBase), MIN_DAMAGE)
