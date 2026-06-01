@@ -33,6 +33,7 @@ function applyDockIcon() {
 
 function createWindow() {
   const iconPath = getAppIconPath()
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -40,14 +41,44 @@ function createWindow() {
     icon: iconPath,
     webPreferences: { preload: join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: false },
   })
+
+  // 兜底计时器：即使始终未触发 ready-to-show（例如 renderer 持续加载失败），
+  // 也强制显示窗口，避免"终端无报错但窗口永不出现"的静默黑屏。
+  const forceShow = setTimeout(() => {
+    if (!win.isDestroyed() && !win.isVisible()) win.show()
+  }, 8000)
+
   win.once('ready-to-show', () => {
+    clearTimeout(forceShow)
     win.show()
+    if (devServerUrl) win.webContents.openDevTools({ mode: 'detach' })
   })
-  if (process.env.VITE_DEV_SERVER_URL) {
-    win.loadURL(process.env.VITE_DEV_SERVER_URL)
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+
+  const loadRenderer = () => {
+    if (win.isDestroyed()) return
+    if (devServerUrl) {
+      win.loadURL(devServerUrl)
+    } else {
+      win.loadFile(join(__dirname, '../renderer/index.html'))
+    }
   }
+
+  // dev 下 dev server 可能尚未就绪，加载失败时自动重试，避免首次竞态导致黑屏。
+  if (devServerUrl) {
+    let retries = 0
+    win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+      if (win.isDestroyed() || errorCode === -3) return // -3 = ERR_ABORTED，正常导航中断，忽略
+      if (retries < 10) {
+        retries += 1
+        console.error(`[main] renderer 加载失败 (${errorCode} ${errorDescription})，1s 后重试 ${retries}/10`)
+        setTimeout(loadRenderer, 1000)
+      } else if (!win.isVisible()) {
+        win.show() // 重试耗尽也把窗口显示出来，便于在页面/DevTools 看到错误
+      }
+    })
+  }
+
+  loadRenderer()
 }
 
 app.whenReady().then(() => {
