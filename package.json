@@ -1,7 +1,7 @@
 {
   "name": "card-god-of-war",
-  "version": "0.2.0",
-  "description": "Turn-based card battle game with elemental combat and persistent progression",
+  "version": "0.3.0",
+  "description": "Turn-based card battle game with elemental combat, victory rewards, relics, defensive/tactical cards, and persistent progression",
   "author": "kaituoC <changktforever@163.com>",
   "repository": {
     "type": "git",
@@ -13,7 +13,7 @@
   "private": true,
   "main": "dist/main/main.js",
   "scripts": {
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && VITE_DEV_SERVER_URL=http://localhost:5173 npx electron .\"",
+    "dev": "concurrently \"vite\" \"wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 npx electron .\"",
     "build": "vue-tsc --noEmit && esbuild src/main.ts --bundle --platform=node --target=node20 --external:electron --outfile=dist/main/main.js --format=cjs && vite build",
     "preview": "vite preview",
     "pack": "npm run build && electron-builder --dir",
