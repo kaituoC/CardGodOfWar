@@ -3,9 +3,26 @@ import { createInitialHero, createBattle, playCard, applyVictoryGrowth, skipTurn
 import { generateMonsterIntent } from '@/game/monster-intent'
 import type { BattleState, Card, MonsterSkill } from '@/game/types'
 
+function regenerateIntent(battle: BattleState): BattleState {
+  // createBattle generates the intent from the ORIGINAL random monster skills.
+  // After overriding monster.skills we must regenerate the intent so it matches,
+  // otherwise stale skills (e.g. a random stun) leak into monster resolution and
+  // make stun/turn assertions flaky.
+  const intent = generateMonsterIntent({
+    level: battle.level,
+    hero: battle.hero,
+    monster: battle.monster,
+    currentTurn: battle.currentTurn,
+    maxTurns: battle.maxTurns,
+    isEnraged: battle.isEnraged,
+    source: 'generated',
+  })
+  return { ...battle, monsterIntent: intent }
+}
+
 function noSkillBattle(level = 1): BattleState {
   const battle = createBattle(level, createInitialHero())
-  return {
+  return regenerateIntent({
     ...battle,
     hero: {
       ...battle.hero,
@@ -21,7 +38,7 @@ function noSkillBattle(level = 1): BattleState {
       },
       skills: [],
     },
-  }
+  })
 }
 
 function battleWithMonsterSkills(skills: MonsterSkill[], overrides?: Partial<BattleState>): BattleState {
@@ -38,16 +55,7 @@ function battleWithMonsterSkills(skills: MonsterSkill[], overrides?: Partial<Bat
     ...restOverrides,
   }
   // Regenerate intent to match the new monster skills
-  const intent = generateMonsterIntent({
-    level: battle.level,
-    hero: battle.hero,
-    monster: battle.monster,
-    currentTurn: battle.currentTurn,
-    maxTurns: battle.maxTurns,
-    isEnraged: battle.isEnraged,
-    source: 'generated',
-  })
-  return { ...battle, monsterIntent: intent }
+  return regenerateIntent(battle)
 }
 
 function card(overrides: Partial<Card>): Card {

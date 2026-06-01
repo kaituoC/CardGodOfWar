@@ -4,7 +4,7 @@ import { generateCards, randomCardType, randomStar } from '@/game/card-pool'
 describe('randomCardType', () => {
   it('returns a valid card type', () => {
     const type = randomCardType()
-    expect(['physical', 'magic', 'heal', 'statBoost']).toContain(type)
+    expect(['physical', 'magic', 'heal', 'statBoost', 'guard', 'tactical']).toContain(type)
   })
 
   it('follows approximate distribution over many samples', () => {
@@ -13,11 +13,13 @@ describe('randomCardType', () => {
     const magic = samples.filter(t => t === 'magic').length
     const heal = samples.filter(t => t === 'heal').length
     const statBoost = samples.filter(t => t === 'statBoost').length
-    // physical:magic:heal:statBoost ≈ 10:10:8:6
-    const total = physical + magic + heal + statBoost
-    expect(physical / total).toBeGreaterThan(0.25)
-    expect(magic / total).toBeGreaterThan(0.25)
-    expect(heal / total).toBeGreaterThan(0.2)
+    const guard = samples.filter(t => t === 'guard').length
+    const tactical = samples.filter(t => t === 'tactical').length
+    // physical:magic:heal:statBoost:guard:tactical ≈ 10:10:8:6:4:4
+    const total = physical + magic + heal + statBoost + guard + tactical
+    expect(physical / total).toBeGreaterThan(0.2)
+    expect(magic / total).toBeGreaterThan(0.2)
+    expect(heal / total).toBeGreaterThan(0.15)
     expect(statBoost / total).toBeGreaterThan(0.1)
   })
 })

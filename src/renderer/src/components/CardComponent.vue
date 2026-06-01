@@ -18,9 +18,9 @@
       {{ statLabel }} <span class="value-num">+{{ card.statBoost.value }}</span>
     </div>
 
-    <!-- Element/detail block -->
-    <div v-if="card.type === 'physical' || card.type === 'magic'" class="card-detail">
-      {{ elementLabel }}
+    <!-- Element/detail block (always rendered to keep card height stable) -->
+    <div class="card-detail" :class="{ empty: !detailLabel }">
+      {{ detailLabel || '·' }}
     </div>
 
     <!-- Estimate block (fixed min-height) -->
@@ -40,20 +40,30 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Card, CardOutcomeEstimate } from '../game/types'
+import { ELEMENT_LABELS, STAT_LABELS } from '../game/constants'
 
 const props = defineProps<{ card: Card; disabled?: boolean; estimate?: CardOutcomeEstimate }>()
 defineEmits<{ play: [card: Card] }>()
 
-const typeNames: Record<string, string> = { physical: '物理', magic: '魔法', heal: '治疗', statBoost: '强化' }
-const elementLabels: Record<string, string> = { fire: '火', thunder: '雷', water: '水' }
-const statLabels: Record<string, string> = { physicalAttack: '物攻', magicAttack: '魔攻', defense: '防御', maxHp: '最大HP', critRate: '暴击率' }
+const typeNames: Record<string, string> = { physical: '物理', magic: '魔法', heal: '治疗', statBoost: '强化', guard: '防御', tactical: '战术' }
+
+const effectLabels: Record<string, string> = { armorBreak: '破甲', suppress: '压制' }
 
 const typeName = computed(() => typeNames[props.card.type] || '')
-const elementLabel = computed(() => elementLabels[props.card.element ?? ''] || '')
-const statLabel = computed(() => props.card.statBoost ? statLabels[props.card.statBoost.stat] : '')
+const elementLabel = computed(() => (props.card.element ? ELEMENT_LABELS[props.card.element] : '') || '')
+const statLabel = computed(() => props.card.statBoost ? STAT_LABELS[props.card.statBoost.stat] : '')
+
+// 固定 detail 区的语义标签：攻击卡显示元素，战术卡显示破甲/压制，防御卡显示护盾
+const detailLabel = computed(() => {
+  const card = props.card
+  if (card.type === 'physical' || card.type === 'magic') return elementLabel.value
+  if (card.type === 'tactical') return effectLabels[card.effect ?? ''] || '战术'
+  if (card.type === 'guard') return '护盾'
+  return ''
+})
 
 const isBlockedByStun = computed(() =>
-  (props.card.type === 'physical' || props.card.type === 'magic') &&
+  (props.card.type === 'physical' || props.card.type === 'magic' || props.card.type === 'tactical') &&
   props.estimate?.type === 'blocked'
 )
 
@@ -66,6 +76,8 @@ $color-physical: #e94560;
 $color-magic: #5dade2;
 $color-heal: #27ae60;
 $color-statBoost: #f0c040;
+$color-guard: #8e9aaf;
+$color-tactical: #b084cc;
 $color-disabled: #6c7380;
 $color-muted: #95a5a6;
 
@@ -115,6 +127,8 @@ $color-muted: #95a5a6;
   &.type-magic { border-left: 3px solid $color-magic; }
   &.type-heal { border-left: 3px solid $color-heal; }
   &.type-statBoost { border-left: 3px solid $color-statBoost; }
+  &.type-guard { border-left: 3px solid $color-guard; }
+  &.type-tactical { border-left: 3px solid $color-tactical; }
 }
 
 .card-header {
@@ -136,6 +150,8 @@ $color-muted: #95a5a6;
 .type-magic .card-type-label { color: $color-magic; }
 .type-heal .card-type-label { color: $color-heal; }
 .type-statBoost .card-type-label { color: $color-statBoost; }
+.type-guard .card-type-label { color: $color-guard; }
+.type-tactical .card-type-label { color: $color-tactical; }
 
 .card-stars {
   font-size: 11px;
@@ -168,6 +184,23 @@ $color-muted: #95a5a6;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.08);
   color: $color-muted;
+
+  // 空占位：保持卡片高度恒定但不可见
+  &.empty {
+    visibility: hidden;
+  }
+}
+
+// 战术/防御卡的 detail 标签采用类型 accent，强化"破甲/压制/护盾"辨识度
+.type-tactical .card-detail:not(.empty) {
+  background: rgba(176, 132, 204, 0.18);
+  color: $color-tactical;
+  font-weight: 600;
+}
+.type-guard .card-detail:not(.empty) {
+  background: rgba(142, 154, 175, 0.18);
+  color: $color-guard;
+  font-weight: 600;
 }
 
 .card-estimate {
@@ -202,9 +235,14 @@ $color-muted: #95a5a6;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
-  background: rgba(233, 69, 96, 0.15);
-  color: $color-physical;
   margin-top: auto;
+
+  .type-physical & { background: rgba(233, 69, 96, 0.15); color: $color-physical; }
+  .type-magic & { background: rgba(93, 174, 226, 0.15); color: $color-magic; }
+  .type-heal & { background: rgba(39, 174, 96, 0.15); color: $color-heal; }
+  .type-statBoost & { background: rgba(240, 192, 64, 0.15); color: $color-statBoost; }
+  .type-guard & { background: rgba(142, 154, 175, 0.15); color: $color-guard; }
+  .type-tactical & { background: rgba(176, 132, 204, 0.15); color: $color-tactical; }
 
   .disabled & {
     background: rgba(108, 115, 128, 0.15);

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概览
 
-**Card God Of War**（卡牌战神）是一款 Electron 桌面卡牌对战游戏，使用 Vue 3 + TypeScript + Pinia 构建。玩家通过出牌（攻击/治疗/属性提升）在回合制战斗中击败不断升级的怪兽，角色属性随胜利持续增长。
+**Card God Of War**（卡牌战神）是一款 Electron 桌面卡牌对战游戏，使用 Vue 3 + TypeScript + Pinia 构建。玩家通过出牌（攻击/治疗/属性提升/防御/战术）在回合制战斗中击败不断升级的怪兽；胜利后从奖励中三选一（属性/遗物/卡牌偏向），借助遗物与状态机制（护盾/破甲/虚弱/眩晕）塑造构筑，角色持续成长。
 
 ## 技术栈
 
@@ -41,6 +41,7 @@ src/
         StatusBar.vue        # 顶部栏：关卡、回合数、Boss/狂暴指示器
         BattleLog.vue        # 可滚动的战斗日志
         ResultDialog.vue     # 胜负弹窗，重试/下一关/返回选项
+        RewardDialog.vue     # 胜利奖励三选一弹窗
         SaveDialog.vue       # 手动存档槽位选择
         DamageNumbers.vue    # 浮动伤害数字容器
       stores/
@@ -49,11 +50,13 @@ src/
         types.ts             # 全部 TypeScript 接口定义
         constants.ts         # 游戏平衡数值（属性、倍率、间隔等）
         game-engine.ts       # 核心战斗逻辑：创建战斗、出牌、怪兽反击
-        battle-calculator.ts # 伤害计算公式（防御、元素、暴击、护盾、狂暴）
+        battle-calculator.ts # 伤害计算公式（防御、破甲、元素、暴击、护盾、虚弱、遗物、狂暴）
+        relic-effects.ts     # 遗物效果解析单一来源，执行(calculateDamage)与预览(previewDamage)共用
         monster-intent.ts    # 怪兽意图生成 + 卡牌预览估算
         floating-numbers.ts  # 浮动伤害数字叠加层
-        card-pool.ts         # 卡牌生成，按类型/星级/系数加权随机
-        monster-generator.ts # 怪兽属性随关卡缩放及技能分配
+        card-pool.ts         # 卡牌生成，按类型/星级/系数加权随机（含卡牌偏向）
+        monster-generator.ts # 怪兽属性随关卡/原型缩放及技能分配
+        reward-generator.ts  # 胜利奖励生成（属性/遗物/卡牌偏向，三选一）
       styles/
         global.scss          # 全局 CSS 重置和主题变量
 tests/
@@ -61,6 +64,10 @@ tests/
     battle-calculator.test.ts
     game-engine.test.ts
     monster-intent.test.ts   # 意图预览、估算隔离、狂暴伤害匹配测试
+    new-features.test.ts     # 奖励/遗物/状态/防御卡/原型/卡牌偏向覆盖
+    relic-effects.test.ts    # 遗物解析契约 + 预览/执行一致性
+  stores/
+    game-store.test.ts       # 奖励应用、关卡门禁、存档恢复 pending reward
 ```
 
 ## 常用命令
@@ -137,10 +144,15 @@ BattleView    →  gameStore.playCardAction() →  playCard()      →  calculat
 
 `BattleView.vue` 使用 flex 双列布局：左侧决策区（手牌 + 操作栏）+ 右侧战斗日志。操作栏从 `position: absolute` 改为 `flex-shrink: 0` 正常流布局。响应式断点 900px 时日志区域堆叠到决策区下方。
 
+### 遗物效果解析（`relic-effects.ts`）
+
+所有"出伤/暴击/护盾/治疗溢出/下回合/破防/战斗开始"类遗物效果在此单一解析，数值来自 `RELIC_REGISTRY.effect`。执行（`battle-calculator.ts` / `game-engine.ts`）与预览（`monster-intent.ts` 的 `previewDamage`）共用同一组 `resolve*` 函数，避免两侧逻辑漂移。新增这类遗物只需在 `RELIC_REGISTRY` 注册并补一个解析分支，调用方无需改动。`calculateDamage` / `previewDamage` 通过 `attackerRelics` 接收英雄遗物列表，而非逐个布尔参数。
+
 ### 注意事项
 
-- `elementLabels` 和 `statLabels` 在 `CardComponent.vue`、`MonsterStatus.vue`、`monster-intent.ts` 三处重复定义，修改元素/属性名称时需要同步更新
-- `monsterIntent` 在 `BattleState` 中定义为非可选类型，但存档恢复时可能暂时缺失，`estimateCardOutcome` 已处理此降级场景
+- 元素/属性/技能显示标签统一在 `constants.ts` 的 `ELEMENT_LABELS`、`STAT_LABELS`、`SKILL_LABELS`，各处（组件与游戏逻辑）引用同一份，修改名称只需改这里
+- `monsterIntent` 在 `BattleState` 中类型为 `MonsterIntent | null`：活跃战斗中始终存在，战斗结束或旧存档恢复时可能暂时为 null，消费点（`resolveMonsterAction`、`estimateCardOutcome`、`MonsterStatus.vue`）均已防御处理
+- 战斗事件 id 形如 `event-<会话种子>-<序号>`，会话种子保证读档后追加的新事件不与存档中的旧事件 id 冲突
 
 ### 状态管理（`game-store.ts`）
 

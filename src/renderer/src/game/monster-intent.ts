@@ -4,6 +4,8 @@ import type {
   CardOutcomeEstimate,
   DamagePreview,
   Element,
+  BreakDefenseStatus,
+  WeakStatus,
   GenerateMonsterIntentInput,
   MonsterIntent,
   MonsterIntentSkill,
@@ -17,7 +19,20 @@ import {
   MIN_DAMAGE,
   ENRAGE_START_TURN,
   ENRAGE_DAMAGE_PER_TURN,
+  BREAK_DEFENSE_REDUCTION_PERCENT,
+  WEAK_MULTIPLIER,
+  STONE_GENERAL_SHIELD_CADENCE,
+  ELEMENT_LABELS,
+  STAT_LABELS,
+  SKILL_LABELS,
 } from './constants'
+import {
+  resolveElementDamageBonus,
+  resolveCritMultiplierBonus,
+  resolveLowHpDamageMultiplier,
+  resolveShieldGainBonus,
+  resolveHealOverflowShieldPercent,
+} from './relic-effects'
 
 let intentSequenceCounter = 0
 
@@ -40,9 +55,19 @@ export function previewDamage(
   critRate: number,
   isCritBoost: boolean,
   isImmuneToElement: Element | null,
+  options?: {
+    effectiveDefense?: number
+    weakMultiplier?: number
+    // 出伤方遗物上下文（仅英雄攻击预览传入），效果解析与执行共用 relic-effects
+    attackerRelics?: readonly string[]
+    attackerCurrentHp?: number
+    attackerMaxHp?: number
+  },
 ): DamagePreview {
+  const relics = options?.attackerRelics ?? []
   const baseDamage = attack * coefficient
-  const afterDefense = Math.max(baseDamage - defense, MIN_DAMAGE)
+  const effectiveDefense = options?.effectiveDefense ?? defense
+  const afterDefense = Math.max(baseDamage - effectiveDefense, MIN_DAMAGE)
 
   let elementMultiplier: number
   if (isImmuneToElement === cardElement) {
@@ -50,9 +75,23 @@ export function previewDamage(
   } else {
     elementMultiplier = getElementMultiplier(cardElement, monsterElement)
   }
-  const estimatedDamage = Math.max(Math.floor(afterDefense * elementMultiplier), MIN_DAMAGE)
+  // Element-damage relic (e.g. flame-emblem) — keep preview in sync with calculateDamage
+  elementMultiplier += resolveElementDamageBonus(relics, cardElement)
 
-  const critMultiplier = isCritBoost ? CRIT_BOOST_MULTIPLIER : CRIT_MULTIPLIER
+  let estimatedDamage = Math.max(Math.floor(afterDefense * elementMultiplier), MIN_DAMAGE)
+
+  // Apply weak multiplier to the post-element damage
+  if (options?.weakMultiplier !== undefined) {
+    estimatedDamage = Math.max(Math.floor(estimatedDamage * options.weakMultiplier), MIN_DAMAGE)
+  }
+
+  // Low-HP relic (e.g. blood-rage-sigil) for hero attacks
+  const lowHpMultiplier = resolveLowHpDamageMultiplier(relics, options?.attackerCurrentHp, options?.attackerMaxHp)
+  if (lowHpMultiplier !== 1.0) {
+    estimatedDamage = Math.max(Math.floor(estimatedDamage * lowHpMultiplier), MIN_DAMAGE)
+  }
+
+  const critMultiplier = (isCritBoost ? CRIT_BOOST_MULTIPLIER : CRIT_MULTIPLIER) + resolveCritMultiplierBonus(relics)
   const critDamage = Math.max(Math.floor(estimatedDamage * critMultiplier), MIN_DAMAGE)
 
   return {
@@ -72,22 +111,14 @@ function getTiming(type: MonsterIntentSkill['type']): 'monsterAction' | 'heroAct
 }
 
 function getSkillLabel(type: MonsterIntentSkill['type'], immuneElement?: Element): string {
-  const base: Record<string, string> = {
-    shield: '护盾',
-    lifesteal: '吸血',
-    critBoost: '暴击强化',
-    elementImmune: '元素免疫',
-    stun: '眩晕',
-  }
   if (type === 'elementImmune' && immuneElement) {
-    const elemLabels: Record<string, string> = { fire: '火', thunder: '雷', water: '水' }
-    return `${base[type]}(${elemLabels[immuneElement]})`
+    return `${SKILL_LABELS[type]}(${ELEMENT_LABELS[immuneElement]})`
   }
-  return base[type]
+  return SKILL_LABELS[type]
 }
 
 export function generateMonsterIntent(input: GenerateMonsterIntentInput): MonsterIntent {
-  const { hero, monster, currentTurn, isEnraged, source = 'generated' } = input
+  const { hero, monster, currentTurn, isEnraged, source = 'generated', existingStatuses = [] } = input
 
   const attackType: 'physical' | 'magic' = Math.random() > 0.5 ? 'physical' : 'magic'
   const baseAttack = attackType === 'physical' ? monster.stats.physicalAttack : monster.stats.magicAttack
@@ -104,8 +135,32 @@ export function generateMonsterIntent(input: GenerateMonsterIntentInput): Monste
     label: getSkillLabel(skill.type, skill.immuneElement),
   }))
 
+  // Stone General: force shield on shield pressure cadence turns (1, 4, 7, 10...)
+  if (monster.archetype?.id === 'stoneGeneral') {
+    const turnInSequence = (currentTurn - 1) % STONE_GENERAL_SHIELD_CADENCE
+    if (turnInSequence === 0) {
+      const existingShield = skills.find(s => s.type === 'shield')
+      if (existingShield) {
+        existingShield.willTrigger = true
+      } else {
+        skills.push({
+          type: 'shield',
+          timing: 'heroActionDefense',
+          willTrigger: true,
+          label: getSkillLabel('shield'),
+        })
+      }
+    }
+  }
+
   const isCritBoost = skills.some(s => s.type === 'critBoost' && s.willTrigger)
   const elementImmune = skills.find(s => s.type === 'elementImmune' && s.willTrigger)
+
+  // Check for weak status on monster
+  const weakStatus = existingStatuses.find(
+    (s): s is WeakStatus => s.type === 'weak' && s.target === 'monster' && s.remainingUses > 0,
+  )
+  const weakMult = weakStatus ? weakStatus.multiplier : undefined
 
   // Preview base damage (without enrage for the previewDamage helper)
   const preview = previewDamage(
@@ -117,6 +172,7 @@ export function generateMonsterIntent(input: GenerateMonsterIntentInput): Monste
     monster.stats.critRate,
     isCritBoost,
     elementImmune?.immuneElement ?? null,
+    { weakMultiplier: weakMult },
   )
 
   // Apply enrage multiplier to the final estimated damage
@@ -149,8 +205,8 @@ export function generateMonsterIntent(input: GenerateMonsterIntentInput): Monste
   }
 }
 
-function findTriggeredSkill(intent: MonsterIntent, type: MonsterIntentSkill['type']): MonsterIntentSkill | undefined {
-  return intent.skills.find(s => s.type === type && s.willTrigger)
+function findTriggeredSkill(intent: MonsterIntent | null, type: MonsterIntentSkill['type']): MonsterIntentSkill | undefined {
+  return intent?.skills.find(s => s.type === type && s.willTrigger)
 }
 
 export function estimateCardOutcome(battle: BattleState, card: Card): CardOutcomeEstimate {
@@ -186,6 +242,58 @@ export function estimateCardOutcome(battle: BattleState, card: Card): CardOutcom
     }
   }
 
+  // --- Guard cards ---
+  if (card.type === 'guard') {
+    const baseShield = Math.floor(hero.stats.defense * card.coefficient)
+    const shieldBonus = resolveShieldGainBonus(hero.relics)
+    const shieldAmount = Math.floor(baseShield * (1 + shieldBonus))
+    return {
+      type: 'guard',
+      shieldAmount,
+      text: `护盾 +${shieldAmount}`,
+    }
+  }
+
+  // --- Tactical cards ---
+  if (card.type === 'tactical') {
+    const statusLabels: Record<string, string> = {
+      armorBreak: '破甲',
+      suppress: '虚弱',
+    }
+    const statusApplied: 'breakDefense' | 'weak' = card.effect === 'armorBreak' ? 'breakDefense' : 'weak'
+    const statusText = statusLabels[card.effect || ''] || statusApplied
+    const amount = card.effect === 'armorBreak' ? BREAK_DEFENSE_REDUCTION_PERCENT : Math.floor(WEAK_MULTIPLIER * 100)
+
+    // Calculate damage preview for tactical cards (account for existing break-defense)
+    const attack = hero.stats.physicalAttack
+    const existingBreakDefense = battle.statusEffects?.find(
+      (s): s is BreakDefenseStatus => s.type === 'breakDefense' && s.target === 'monster' && s.remainingUses > 0,
+    )
+    const effectiveMonsterDefense = existingBreakDefense
+      ? Math.max(monster.stats.defense - Math.floor(monster.stats.defense * existingBreakDefense.reductionPercent / 100), 0)
+      : monster.stats.defense
+    const tacticalDamage = previewDamage(
+      attack,
+      card.coefficient,
+      effectiveMonsterDefense,
+      card.element || monster.element,
+      monster.element,
+      hero.stats.critRate,
+      false,
+      null,
+      { attackerRelics: hero.relics, attackerCurrentHp: hero.currentHp, attackerMaxHp: hero.stats.maxHp },
+    )
+
+    return {
+      type: 'tactical',
+      amount,
+      damageEstimate: tacticalDamage.estimatedDamage,
+      statusApplied,
+      statusText,
+      text: `伤害 ${tacticalDamage.estimatedDamage} + 施加 ${statusText}`,
+    }
+  }
+
   if (card.type === 'physical' || card.type === 'magic') {
     const attack = card.type === 'physical' ? hero.stats.physicalAttack : hero.stats.magicAttack
     const shield = findTriggeredSkill(monsterIntent, 'shield')
@@ -193,15 +301,26 @@ export function estimateCardOutcome(battle: BattleState, card: Card): CardOutcom
     // Monster critBoost does NOT affect hero card estimates — hero attacks use their own crit only
     const isCritBoost = false
 
+    // Check for break-defense status on monster
+    const breakDefenseStatus = battle.statusEffects?.find(
+      (s): s is BreakDefenseStatus => s.type === 'breakDefense' && s.target === 'monster' && s.remainingUses > 0,
+    )
+    const effectiveMonsterDefense = breakDefenseStatus
+      ? Math.max(monster.stats.defense - Math.floor(monster.stats.defense * breakDefenseStatus.reductionPercent / 100), 0)
+      : monster.stats.defense
+
+    // Relic effects (flame-emblem / sharp-charm / blood-rage-sigil) are resolved inside
+    // previewDamage via relic-effects, the same source calculateDamage uses.
     const preview = previewDamage(
       attack,
       card.coefficient,
-      monster.stats.defense,
+      effectiveMonsterDefense,
       card.element!,
       monster.element,
       hero.stats.critRate,
       isCritBoost,
       elementImmune?.immuneElement ?? null,
+      { attackerRelics: hero.relics, attackerCurrentHp: hero.currentHp, attackerMaxHp: hero.stats.maxHp },
     )
 
     // Apply shield reduction to the estimate
@@ -233,23 +352,31 @@ export function estimateCardOutcome(battle: BattleState, card: Card): CardOutcom
   if (card.type === 'heal') {
     const rawHeal = Math.floor(hero.stats.maxHp * card.coefficient)
     const healAmount = Math.min(rawHeal, hero.stats.maxHp - hero.currentHp)
+
+    // Heal-overflow-to-shield relic (e.g. water-spirit-bottle) — same source as execution
+    const overflowShieldPercent = resolveHealOverflowShieldPercent(hero.relics)
+    let overflowShield: number | undefined
+    if (overflowShieldPercent !== undefined && rawHeal > healAmount) {
+      const overflow = rawHeal - healAmount
+      overflowShield = Math.floor(overflow * overflowShieldPercent)
+    }
+
+    let text = `恢复 ${healAmount}`
+    if (overflowShield && overflowShield > 0) {
+      text += ` | 溢出护盾 +${overflowShield}`
+    }
+
     return {
       type: 'heal',
       amount: healAmount,
-      text: `恢复 ${healAmount}`,
+      overflowShield,
+      text,
     }
   }
 
   if (card.type === 'statBoost' && card.statBoost) {
     const { stat, value } = card.statBoost
-    const statLabels: Record<string, string> = {
-      physicalAttack: '物攻',
-      magicAttack: '魔攻',
-      defense: '防御',
-      maxHp: '最大HP',
-      critRate: '暴击率',
-    }
-    const label = statLabels[stat] || stat
+    const label = STAT_LABELS[stat] || stat
     return {
       type: 'statBoost',
       stat,
