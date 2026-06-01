@@ -1,6 +1,7 @@
 {
   "appId": "com.cardgodofwar.app",
   "productName": "卡牌战神",
+  "artifactName": "${name}-${version}-${os}-${arch}.${ext}",
   "directories": {
     "output": "release"
   },

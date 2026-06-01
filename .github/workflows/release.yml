@@ -17,7 +17,9 @@ jobs:
       fail-fast: false # 单平台失败不影响其它平台
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-13       # Intel x64（macos-latest 已是 Apple Silicon，单独保留 Intel 构建）
+            script: dist:mac
+          - os: macos-latest   # Apple Silicon arm64
             script: dist:mac
           - os: windows-latest
             script: dist:win
@@ -60,16 +62,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4 # 读取仓库根的 RELEASE_NOTES.md 作为发布说明
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          merge-multiple: true # 三个平台产物合并到同一目录
+          merge-multiple: true # 多平台产物合并到同一目录
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/**/*
-          generate_release_notes: true # 自动根据合并的 PR/commit 生成发布说明
+          body_path: RELEASE_NOTES.md # 中文发布说明（发版前更新此文件，见 CLAUDE.md 发布流程）
+          generate_release_notes: false
           draft: false
           prerelease: false
