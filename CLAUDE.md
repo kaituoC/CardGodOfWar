@@ -113,7 +113,7 @@ npm run test:watch     # Vitest 监听模式
 9. **归档** `/opsx:archive` — delta 合并进 `openspec/specs/`，change 移入 `archive/`。
 10. **提交** — 默认分支先开分支；按主题分组 commit（feat / fix / test / docs / ci），message 以 `Co-Authored-By` 结尾。
 11. **Push + PR ⚠️** — 用户确认后 push 并 `gh pr create`（结构化 body）；**不擅自合并 PR**。
-12. **Release ⚠️（仅发版时）** — PR 合并后打 `vX.Y.Z` tag → CI workflow 三平台构建并创建 GitHub Release → 用中文覆盖 Release 文案。
+12. **Release ⚠️（仅发版时）** — 先更新仓库根 `RELEASE_NOTES.md`（中文发布说明）→ PR 合并后打 `vX.Y.Z` tag → CI workflow 多平台构建（mac arm64/x64、win、linux）并自动取 `RELEASE_NOTES.md` 创建 GitHub Release。
 
 ### 简化流程（小修复 / 文档类）
 
@@ -127,7 +127,7 @@ npm run test:watch     # Vitest 监听模式
 
 - **沙箱**：`vite build`、`npm install` 等需关闭沙箱运行（沙箱会报误导性的模块解析 / 权限错误）；`npm test` 与 `vue-tsc` 可在沙箱内跑。
 - **本地网络**：dev server 统一用 `127.0.0.1`（vite 默认绑 IPv6 `::1`，会与 wait-on/electron 的 IPv4 探测不匹配，导致窗口不弹）。
-- **发布文案**：Release notes 用中文；当前 gh 无 `release edit` 子命令，经 `gh api -X PATCH repos/<owner>/<repo>/releases/{id}` 更新标题与正文。
+- **发布文案**：Release notes 用中文，维护在仓库根 `RELEASE_NOTES.md`；发版前更新，打 tag 后 CI 自动取用（无需手动改 GitHub）。
 - **测试稳定性**：眩晕清除类测试必须使用无技能怪兽并重新生成 intent，否则怪兽随机反击会重新眩晕英雄，导致断言 flaky。
 
 ## 架构
